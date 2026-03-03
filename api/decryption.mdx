@@ -215,6 +215,38 @@ function canDecryptPublicly() external view returns (bool) {
 
 ---
 
+### FHE.checkSignatures()
+
+Verify KMS decryption signatures on-chain to ensure the integrity of decrypted values. This function validates that plaintext results provided by the KMS match the encrypted ciphertext.
+
+<ParamField path="signatures" type="bytes" required>
+  KMS signatures proving the decryption is valid
+</ParamField>
+
+<ParamField path="returns" type="bool">
+  Returns true if signatures are valid, false otherwise
+</ParamField>
+
+**Signature**:
+```solidity
+function checkSignatures(bytes calldata signatures) returns (bool)
+```
+
+**Example**:
+```solidity
+function verifyDecryption(
+    bytes calldata signatures
+) external view returns (bool) {
+    return FHE.checkSignatures(signatures);
+}
+```
+
+<Note>
+  **Optional Verification**: `FHE.checkSignatures()` is used when you need cryptographic proof that decrypted plaintext values match the original ciphertext. This is most useful when accepting external decryption results.
+</Note>
+
+---
+
 ## Decryption Patterns
 
 ### Pattern 1: Conditional Public Reveal
