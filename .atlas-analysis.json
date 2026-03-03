@@ -1,0 +1,168 @@
+{
+  "projectType": "general",
+  "projectName": "FHEVM Bootcamp",
+  "projectDescription": "Comprehensive training program for building confidential smart contracts with Fully Homomorphic Encryption on the Ethereum Virtual Machine",
+  "theme": "aspen",
+  "primaryColor": "#6366F1",
+  "lightColor": "#818CF8",
+  "darkColor": "#4F46E5",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quick-start",
+              "installation",
+              "curriculum-overview"
+            ]
+          },
+          {
+            "group": "Week 1: Foundations",
+            "pages": [
+              "modules/00-prerequisites",
+              "modules/01-intro-to-fhe",
+              "modules/02-development-setup",
+              "modules/03-encrypted-types",
+              "modules/04-operations"
+            ]
+          },
+          {
+            "group": "Week 2: Core Patterns",
+            "pages": [
+              "modules/05-access-control",
+              "modules/06-encrypted-inputs",
+              "modules/07-decryption",
+              "modules/08-conditional-logic",
+              "modules/09-randomness"
+            ]
+          },
+          {
+            "group": "Week 3: Applications",
+            "pages": [
+              "modules/10-frontend-integration",
+              "modules/11-confidential-erc20",
+              "modules/12-confidential-voting",
+              "modules/13-sealed-bid-auction",
+              "modules/14-testing-debugging"
+            ]
+          },
+          {
+            "group": "Week 4: Mastery",
+            "pages": [
+              "modules/15-gas-optimization",
+              "modules/16-security-best-practices",
+              "modules/17-advanced-patterns",
+              "modules/18-confidential-defi",
+              "modules/19-capstone-dao"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/testing-fhe-contracts",
+              "guides/deploying-to-sepolia",
+              "guides/frontend-integration",
+              "guides/common-pitfalls"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "api/fhe-library",
+              "api/encrypted-types"
+            ]
+          },
+          {
+            "group": "Operations",
+            "pages": [
+              "api/arithmetic",
+              "api/bitwise",
+              "api/comparison",
+              "api/conditional"
+            ]
+          },
+          {
+            "group": "Access Control",
+            "pages": [
+              "api/acl",
+              "api/input-conversion",
+              "api/decryption"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "api/randomness",
+              "api/type-casting",
+              "api/gas-costs"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Resources",
+        "groups": [
+          {
+            "group": "Reference",
+            "pages": [
+              "resources/cheatsheet",
+              "resources/glossary",
+              "resources/security-checklist"
+            ]
+          },
+          {
+            "group": "Learning",
+            "pages": [
+              "resources/learning-paths",
+              "resources/homework-assignments",
+              "resources/assessment-system"
+            ]
+          },
+          {
+            "group": "Additional",
+            "pages": [
+              "resources/contracts-reference",
+              "resources/deployed-contracts",
+              "resources/contributing",
+              "resources/faq"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "20 comprehensive modules covering FHE fundamentals to advanced patterns",
+    "35 production-ready Solidity contracts with 328 passing tests",
+    "Hands-on exercises and solutions for each module",
+    "Interactive frontend demo with client-side encryption",
+    "Complete curriculum with quizzes, homework, and capstone project",
+    "Gas optimization techniques for FHE operations",
+    "Security best practices and audit checklist",
+    "Deployed contracts on Ethereum Sepolia testnet"
+  ],
+  "publicApiSurface": [
+    "FHE.add() - Arithmetic operations on encrypted integers",
+    "FHE.sub() - Subtraction of encrypted values",
+    "FHE.mul() - Multiplication of encrypted values",
+    "FHE.gt() / FHE.lt() / FHE.eq() - Comparison operations",
+    "FHE.select() - Conditional selection (encrypted ternary)",
+    "FHE.and() / FHE.or() / FHE.xor() - Bitwise operations",
+    "FHE.allowThis() / FHE.allow() - Access control list management",
+    "FHE.fromExternal() - Convert external encrypted inputs",
+    "FHE.randEuint32() - On-chain random number generation",
+    "FHE.asEuint64() - Type casting between encrypted types",
+    "euint8, euint16, euint32, euint64, euint128, euint256 - Encrypted integer types",
+    "ebool - Encrypted boolean type",
+    "eaddress - Encrypted address type"
+  ]
+}
