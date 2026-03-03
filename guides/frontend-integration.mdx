@@ -1,0 +1,706 @@
+---
+title: Frontend Integration
+description: Connect React frontends to fhEVM contracts using the Relayer SDK for client-side encryption and decryption
+---
+
+# Frontend Integration
+
+This guide shows you how to build a React frontend that interacts with fhEVM contracts using the Relayer SDK for client-side encryption and decryption.
+
+## Architecture Overview
+
+The fhEVM frontend workflow:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Browser (React + Relayer SDK)                              │
+│                                                             │
+│ 1. Initialize FHE instance (fetch public key)              │
+│ 2. Encrypt plaintext inputs client-side                    │
+│ 3. Send encrypted inputs as tx params (externalEuintXX)    │
+└──────────────────────┬──────────────────────────────────────┘
+                       │
+                       v
+┌─────────────────────────────────────────────────────────────┐
+│ FHEVM Contract                                              │
+│                                                             │
+│ 4. FHE.fromExternal(input, inputProof) → euintXX           │
+│ 5. Perform FHE operations                                   │
+│ 6. Store encrypted results with ACL                         │
+└──────────────────────┬──────────────────────────────────────┘
+                       │
+                       v
+┌─────────────────────────────────────────────────────────────┐
+│ Gateway (for decryption)                                    │
+│                                                             │
+│ 7. User requests decryption via Relayer SDK                │
+│ 8. Gateway re-encrypts for user's keypair                  │
+│ 9. Frontend decrypts and displays                          │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## Setup
+
+<Steps>
+  <Step title="Install dependencies">
+    ```bash
+    npm install @zama-fhe/relayer-sdk ethers
+    ```
+
+    For a new React + Vite project:
+
+    ```bash
+    npm create vite@latest my-fhevm-app -- --template react-ts
+    cd my-fhevm-app
+    npm install @zama-fhe/relayer-sdk ethers
+    npm install
+    ```
+  </Step>
+
+  <Step title="Configure network settings">
+    Create a config file:
+
+    ```typescript src/config.ts
+    export const RELAYER_URL = "https://gateway.zama.ai";
+    export const RPC_URL = "https://ethereum-sepolia-rpc.publicnode.com";
+    export const CHAIN_ID = 11155111; // Sepolia
+
+    // Your deployed contract addresses
+    export const CONTRACTS = {
+      SimpleCounter: "0x17B6209385c2e36E6095b89572273175902547f9",
+      ConfidentialERC20: "0x623b1653AB004661BC7832AC2930Eb42607C4013",
+    };
+    ```
+  </Step>
+
+  <Step title="Initialize the FHE instance">
+    Create an FHEVM utility module:
+
+    ```typescript src/fhevm.ts
+    import { RELAYER_URL, RPC_URL, CHAIN_ID } from "./config";
+
+    // Zama fhEVM coprocessor addresses on Ethereum Sepolia
+    const ACL_ADDRESS = "0xf0Ffdc93b7E186bC2f8CB3dAA75D86d1930A433D";
+    const KMS_ADDRESS = "0xbE0E383937d564D7FF0BC3b46c51f0bF8d5C311A";
+    const INPUT_VERIFIER_ADDRESS = "0xBBC1fFCdc7C316aAAd72E807D9b0272BE8F84DA0";
+    const VERIFYING_CONTRACT_DECRYPTION = "0x5D8BD78e2ea6bbE41f26dFe9fdaEAa349e077478";
+    const VERIFYING_CONTRACT_INPUT = "0x483b9dE06E4E4C7D35CCf5837A1668487406D955";
+    const GATEWAY_CHAIN_ID = 10901;
+
+    let instance: any = null;
+
+    /**
+     * Initialize a singleton Relayer SDK instance.
+     */
+    export async function initFhevm(): Promise<any> {
+      if (instance) return instance;
+
+      console.log("[FHEVM] Initializing...");
+
+      // Load SDK from CDN or local bundle
+      const sdk = (window as any).relayerSDK;
+      if (!sdk) {
+        throw new Error("relayerSDK not found. Include the SDK script.");
+      }
+
+      // Initialize WASM modules
+      if (sdk.initSDK) {
+        await sdk.initSDK();
+      }
+
+      // Create the instance
+      instance = await sdk.createInstance({
+        kmsContractAddress: KMS_ADDRESS,
+        aclContractAddress: ACL_ADDRESS,
+        inputVerifierContractAddress: INPUT_VERIFIER_ADDRESS,
+        verifyingContractAddressDecryption: VERIFYING_CONTRACT_DECRYPTION,
+        verifyingContractAddressInputVerification: VERIFYING_CONTRACT_INPUT,
+        chainId: CHAIN_ID,
+        gatewayChainId: GATEWAY_CHAIN_ID,
+        network: RPC_URL,
+        relayerUrl: RELAYER_URL,
+      });
+
+      console.log("[FHEVM] Instance created successfully");
+      return instance;
+    }
+
+    /**
+     * Get the existing Relayer SDK instance.
+     */
+    export function getFhevm(): any {
+      if (!instance) throw new Error("FHEVM not initialized. Call initFhevm() first.");
+      return instance;
+    }
+
+    /**
+     * Create an encrypted input for a contract call.
+     */
+    export async function createEncryptedInput(
+      contractAddress: string,
+      userAddress: string
+    ) {
+      const fhe = await initFhevm();
+      return fhe.createEncryptedInput(contractAddress, userAddress);
+    }
+    ```
+  </Step>
+</Steps>
+
+## Example Contract: SimpleCounter
+
+Here's the contract we'll interact with:
+
+```solidity SimpleCounter.sol
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import {FHE, euint32, externalEuint32} from "@fhevm/solidity/lib/FHE.sol";
+import {ZamaEthereumConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
+
+contract SimpleCounter is ZamaEthereumConfig {
+    mapping(address => euint32) private _counts;
+
+    event CountIncremented(address indexed user);
+
+    function increment(externalEuint32 encValue, bytes calldata inputProof) external {
+        euint32 value = FHE.fromExternal(encValue, inputProof);
+        _counts[msg.sender] = FHE.add(_counts[msg.sender], value);
+        FHE.allowThis(_counts[msg.sender]);
+        FHE.allow(_counts[msg.sender], msg.sender);
+        emit CountIncremented(msg.sender);
+    }
+
+    function getMyCount() external view returns (euint32) {
+        return _counts[msg.sender];
+    }
+}
+```
+
+Key points:
+- Uses `externalEuint32` for encrypted input from frontend
+- Converts with `FHE.fromExternal(encValue, inputProof)`
+- Grants ACL with `FHE.allowThis()` and `FHE.allow()`
+- Returns encrypted handle via `getMyCount()`
+
+## Encrypting Inputs
+
+Create a utility to encrypt values before sending transactions:
+
+```typescript src/utils/encrypt.ts
+import { createEncryptedInput } from "../fhevm";
+
+/**
+ * Encrypt a number for contract input.
+ */
+export async function encryptAmount(
+  amount: number,
+  contractAddress: string,
+  userAddress: string
+) {
+  const input = await createEncryptedInput(contractAddress, userAddress);
+  input.add32(amount); // Encrypt as euint32
+
+  const encrypted = await input.encrypt();
+  return {
+    handle: encrypted.handles[0],    // bytes32 encrypted handle
+    proof: encrypted.inputProof,     // bytes proof
+  };
+}
+```
+
+Available input methods:
+- `input.addBool(value)` - Encrypt a boolean
+- `input.add8(value)` - Encrypt a uint8 (max: 255)
+- `input.add16(value)` - Encrypt a uint16 (max: 65535)
+- `input.add32(value)` - Encrypt a uint32
+- `input.add64(value)` - Encrypt a uint64
+- `input.add128(value)` - Encrypt a uint128
+- `input.add256(value)` - Encrypt a uint256
+- `input.addAddress(value)` - Encrypt an address
+
+## Sending Encrypted Transactions
+
+```typescript src/utils/counter.ts
+import { Contract, BrowserProvider } from "ethers";
+import { encryptAmount } from "./encrypt";
+import { CONTRACTS } from "../config";
+
+const COUNTER_ABI = [
+  "function increment(bytes32 encValue, bytes calldata inputProof) external",
+  "function getMyCount() external view returns (uint256)",
+  "event CountIncremented(address indexed user)",
+];
+
+/**
+ * Increment the user's counter by an encrypted amount.
+ */
+export async function incrementCounter(amount: number): Promise<void> {
+  const provider = new BrowserProvider(window.ethereum);
+  const signer = await provider.getSigner();
+  const userAddress = await signer.getAddress();
+
+  const contract = new Contract(CONTRACTS.SimpleCounter, COUNTER_ABI, signer);
+
+  // Encrypt the amount
+  const encrypted = await encryptAmount(amount, CONTRACTS.SimpleCounter, userAddress);
+
+  // Send the transaction with encrypted handle and proof
+  const tx = await contract.increment(encrypted.handle, encrypted.proof);
+  await tx.wait();
+
+  console.log("Counter incremented!");
+}
+```
+
+<Note>
+On the ABI level, `externalEuint32` appears as `bytes32` (the handle), and the proof is `bytes calldata`.
+</Note>
+
+## Decrypting Values
+
+To read encrypted values, request re-encryption through the gateway:
+
+```typescript src/utils/counter.ts
+import { initFhevm } from "../fhevm";
+
+/**
+ * Read the user's encrypted counter value.
+ */
+export async function readCounter(): Promise<number> {
+  const provider = new BrowserProvider(window.ethereum);
+  const signer = await provider.getSigner();
+  const userAddress = await signer.getAddress();
+
+  const contract = new Contract(CONTRACTS.SimpleCounter, COUNTER_ABI, signer);
+  const instance = await initFhevm();
+
+  // Get the encrypted handle from the contract
+  const encryptedHandle = await contract.getMyCount();
+
+  // Generate temporary keypair for re-encryption
+  const { publicKey, privateKey } = instance.generateKeypair();
+  
+  // Create EIP-712 signature to prove ACL access
+  const eip712 = instance.createEIP712(publicKey, CONTRACTS.SimpleCounter);
+  const signature = await signer.signTypedData(
+    eip712.domain,
+    eip712.types,
+    eip712.message
+  );
+
+  // Request re-encryption from gateway
+  const decryptedValue = await instance.reencrypt(
+    encryptedHandle,
+    privateKey,
+    publicKey,
+    signature,
+    CONTRACTS.SimpleCounter,
+    userAddress
+  );
+
+  return Number(decryptedValue);
+}
+```
+
+The decryption flow:
+1. Contract returns encrypted handle (a `uint256` reference)
+2. User generates temporary keypair
+3. User signs EIP-712 message to prove ACL access
+4. Gateway re-encrypts with user's temporary public key
+5. Frontend decrypts with temporary private key
+
+## React Component
+
+Put it all together in a React component:
+
+```tsx src/components/Counter.tsx
+import { useState, useEffect } from "react";
+import { incrementCounter, readCounter } from "../utils/counter";
+
+export function Counter() {
+  const [counter, setCounter] = useState<number | null>(null);
+  const [amount, setAmount] = useState<number>(1);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    refreshCounter();
+  }, []);
+
+  async function refreshCounter() {
+    try {
+      const value = await readCounter();
+      setCounter(value);
+    } catch (err) {
+      console.error("Failed to read counter:", err);
+    }
+  }
+
+  async function handleIncrement() {
+    setLoading(true);
+    try {
+      await incrementCounter(amount);
+      await refreshCounter();
+    } catch (err) {
+      console.error("Increment failed:", err);
+    }
+    setLoading(false);
+  }
+
+  return (
+    <div className="counter-widget">
+      <h2>Encrypted Counter</h2>
+      <p className="counter-value">
+        Your counter: {counter !== null ? counter : "Loading..."}
+      </p>
+      
+      <div className="controls">
+        <input
+          type="number"
+          value={amount}
+          onChange={(e) => setAmount(Number(e.target.value))}
+          min={1}
+          disabled={loading}
+        />
+        <button onClick={handleIncrement} disabled={loading}>
+          {loading ? "Processing..." : "+ Increment"}
+        </button>
+        <button onClick={refreshCounter} disabled={loading}>
+          Refresh
+        </button>
+      </div>
+    </div>
+  );
+}
+```
+
+## Wallet Connection
+
+Add MetaMask connection:
+
+```typescript src/utils/wallet.ts
+import { BrowserProvider } from "ethers";
+
+/**
+ * Connect to MetaMask and return the user's address.
+ */
+export async function connectWallet(): Promise<string> {
+  if (!window.ethereum) {
+    throw new Error("MetaMask not detected");
+  }
+
+  const accounts = await window.ethereum.request({
+    method: "eth_requestAccounts",
+  });
+
+  return accounts[0];
+}
+
+/**
+ * Switch to Sepolia network.
+ */
+export async function switchToSepolia(): Promise<void> {
+  if (!window.ethereum) return;
+
+  try {
+    await window.ethereum.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: "0xaa36a7" }], // 11155111 in hex
+    });
+  } catch (error: any) {
+    // Network not added, add it
+    if (error.code === 4902) {
+      await window.ethereum.request({
+        method: "wallet_addEthereumChain",
+        params: [
+          {
+            chainId: "0xaa36a7",
+            chainName: "Sepolia Testnet",
+            rpcUrls: ["https://ethereum-sepolia-rpc.publicnode.com"],
+            blockExplorerUrls: ["https://sepolia.etherscan.io"],
+            nativeCurrency: {
+              name: "Sepolia ETH",
+              symbol: "ETH",
+              decimals: 18,
+            },
+          },
+        ],
+      });
+    }
+  }
+}
+```
+
+Use in your app:
+
+```tsx src/App.tsx
+import { useState } from "react";
+import { connectWallet, switchToSepolia } from "./utils/wallet";
+import { Counter } from "./components/Counter";
+import { initFhevm } from "./fhevm";
+
+export default function App() {
+  const [address, setAddress] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function handleConnect() {
+    setLoading(true);
+    try {
+      await switchToSepolia();
+      const addr = await connectWallet();
+      setAddress(addr);
+      await initFhevm(); // Initialize FHE instance
+    } catch (err) {
+      console.error("Connection failed:", err);
+    }
+    setLoading(false);
+  }
+
+  return (
+    <div className="app">
+      <h1>FHEVM Counter Demo</h1>
+      
+      {!address ? (
+        <button onClick={handleConnect} disabled={loading}>
+          {loading ? "Connecting..." : "Connect Wallet"}
+        </button>
+      ) : (
+        <>
+          <p>Connected: {address.slice(0, 6)}...{address.slice(-4)}</p>
+          <Counter />
+        </>
+      )}
+    </div>
+  );
+}
+```
+
+## External Types Reference
+
+When encrypted data crosses the contract boundary, it uses **external types**:
+
+| External Type | Internal Type | Conversion |
+|--------------|---------------|------------|
+| `externalEbool` | `ebool` | `FHE.fromExternal(val, proof)` |
+| `externalEuint8` | `euint8` | `FHE.fromExternal(val, proof)` |
+| `externalEuint16` | `euint16` | `FHE.fromExternal(val, proof)` |
+| `externalEuint32` | `euint32` | `FHE.fromExternal(val, proof)` |
+| `externalEuint64` | `euint64` | `FHE.fromExternal(val, proof)` |
+| `externalEuint128` | `euint128` | `FHE.fromExternal(val, proof)` |
+| `externalEuint256` | `euint256` | `FHE.fromExternal(val, proof)` |
+| `externalEaddress` | `eaddress` | `FHE.fromExternal(val, proof)` |
+
+## Frontend vs. Test Environment
+
+The encryption flow is the same, but **decryption differs**:
+
+| Environment | SDK | Decrypt Method |
+|-------------|-----|----------------|
+| **Browser (Frontend)** | `@zama-fhe/relayer-sdk` | `instance.reencrypt()` with keypair + EIP-712 signature |
+| **Hardhat Tests** | `@fhevm/hardhat-plugin` | `fhevm.userDecryptEuint(type, handle, addr, signer)` |
+
+## Best Practices
+
+<Steps>
+  <Step title="Initialize once">
+    Always initialize the FHE instance before encrypting:
+
+    ```typescript
+    const instance = await initFhevm();
+    const encrypted = instance.createEncryptedInput(...);
+    ```
+  </Step>
+
+  <Step title="Cache decrypted values">
+    Decryption requires a gateway request and signature. Cache results:
+
+    ```typescript
+    const decryptionCache = new Map<string, number>();
+
+    async function cachedDecrypt(handle: bigint): Promise<number> {
+      const key = handle.toString();
+      if (decryptionCache.has(key)) {
+        return decryptionCache.get(key)!;
+      }
+      const value = await readCounter();
+      decryptionCache.set(key, value);
+      return value;
+    }
+    ```
+  </Step>
+
+  <Step title="Clear cache on state changes">
+    After write transactions, invalidate cached values:
+
+    ```typescript
+    async function handleIncrement() {
+      await incrementCounter(amount);
+      decryptionCache.clear(); // Invalidate
+      await refreshCounter();
+    }
+    ```
+  </Step>
+
+  <Step title="Handle wallet connection errors">
+    ```typescript
+    try {
+      await connectWallet();
+    } catch (error: any) {
+      if (error.code === 4001) {
+        // User rejected request
+        alert("Please connect your wallet to continue");
+      } else {
+        console.error("Connection error:", error);
+      }
+    }
+    ```
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+<Accordion title="'relayerSDK not found' error">
+**Cause:** The Relayer SDK script hasn't loaded.
+
+**Solution:** Include the SDK bundle in your `public/` folder or load from CDN:
+
+```html index.html
+<script src="/relayer-sdk-js.js"></script>
+```
+
+Or dynamically:
+
+```typescript
+const script = document.createElement("script");
+script.src = "/relayer-sdk-js.js";
+script.async = true;
+document.head.appendChild(script);
+```
+</Accordion>
+
+<Accordion title="Decryption fails with 'signature verification failed'">
+**Cause:** The user doesn't have ACL permission for the ciphertext.
+
+**Solution:** Ensure the contract calls `FHE.allow(value, user)` after storing:
+
+```solidity
+FHE.allow(_counts[msg.sender], msg.sender);
+```
+</Accordion>
+
+<Accordion title="Transaction reverts with 'invalid proof'">
+**Cause:** Encrypted input was created with wrong contract/user address.
+
+**Solution:** Match addresses exactly:
+
+```typescript
+// WRONG
+const enc = await createEncryptedInput(
+  wrongContractAddress,  // Wrong!
+  userAddress
+);
+
+// CORRECT
+const enc = await createEncryptedInput(
+  CONTRACTS.SimpleCounter,  // Exact deployed address
+  userAddress               // Current user's address
+);
+```
+</Accordion>
+
+<Accordion title="Values don't update after transaction">
+**Cause:** Reading too quickly before transaction is mined.
+
+**Solution:** Wait for the transaction:
+
+```typescript
+const tx = await contract.increment(handle, proof);
+await tx.wait(); // Wait for confirmation
+await refreshCounter(); // Now safe to read
+```
+</Accordion>
+
+## Example: ConfidentialERC20 Transfer
+
+Here's a complete example for transferring encrypted tokens:
+
+```typescript src/utils/token.ts
+import { Contract, BrowserProvider } from "ethers";
+import { encryptAmount } from "./encrypt";
+import { initFhevm } from "../fhevm";
+import { CONTRACTS } from "../config";
+
+const ERC20_ABI = [
+  "function transfer(bytes32 encAmount, bytes calldata proof, address to) external",
+  "function balanceOf(address account) external view returns (uint256)",
+  "function name() external view returns (string)",
+  "function symbol() external view returns (string)",
+];
+
+export async function transferTokens(
+  to: string,
+  amount: number
+): Promise<void> {
+  const provider = new BrowserProvider(window.ethereum);
+  const signer = await provider.getSigner();
+  const userAddress = await signer.getAddress();
+
+  const contract = new Contract(CONTRACTS.ConfidentialERC20, ERC20_ABI, signer);
+
+  // Encrypt the amount
+  const encrypted = await encryptAmount(
+    amount,
+    CONTRACTS.ConfidentialERC20,
+    userAddress
+  );
+
+  // Send transfer with encrypted amount
+  const tx = await contract.transfer(encrypted.handle, encrypted.proof, to);
+  await tx.wait();
+
+  console.log(`Transferred ${amount} tokens to ${to}`);
+}
+
+export async function getBalance(): Promise<number> {
+  const provider = new BrowserProvider(window.ethereum);
+  const signer = await provider.getSigner();
+  const userAddress = await signer.getAddress();
+
+  const contract = new Contract(CONTRACTS.ConfidentialERC20, ERC20_ABI, signer);
+  const instance = await initFhevm();
+
+  // Get encrypted balance handle
+  const encryptedHandle = await contract.balanceOf(userAddress);
+
+  // Decrypt it
+  const { publicKey, privateKey } = instance.generateKeypair();
+  const eip712 = instance.createEIP712(publicKey, CONTRACTS.ConfidentialERC20);
+  const signature = await signer.signTypedData(
+    eip712.domain,
+    eip712.types,
+    eip712.message
+  );
+
+  const decrypted = await instance.reencrypt(
+    encryptedHandle,
+    privateKey,
+    publicKey,
+    signature,
+    CONTRACTS.ConfidentialERC20,
+    userAddress
+  );
+
+  return Number(decrypted);
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Common Pitfalls" icon="triangle-exclamation" href="/guides/common-pitfalls">
+    Learn the most frequent mistakes and how to avoid them
+  </Card>
+  <Card title="Testing FHE Contracts" icon="flask" href="/guides/testing-fhe-contracts">
+    Write comprehensive tests for your contracts
+  </Card>
+</CardGroup>

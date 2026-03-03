@@ -1,0 +1,189 @@
+---
+title: Welcome to FHEVM Bootcamp
+description: Master the art of building confidential smart contracts with Fully Homomorphic Encryption on the EVM
+---
+
+# Welcome to FHEVM Bootcamp
+
+Build smart contracts where data stays encrypted during computation. No decryption needed. No trusted third parties. Just math.
+
+## What you'll learn
+
+This comprehensive, hands-on training program teaches you to design, develop, audit, and deploy FHE-powered smart contracts using **Zama's fhEVM** stack and the latest `FHE` Solidity library.
+
+<CardGroup cols={2}>
+  <Card title="Quick start" icon="rocket" href="/quick-start">
+    Get up and running in under 10 minutes
+  </Card>
+  <Card title="Installation" icon="download" href="/installation">
+    Detailed setup instructions for your development environment
+  </Card>
+  <Card title="Curriculum overview" icon="book" href="/curriculum-overview">
+    Explore the full 4-week, 20-module program
+  </Card>
+  <Card title="Learning paths" icon="map" href="/resources/learning-paths">
+    Choose your pace: intensive, part-time, or self-paced
+  </Card>
+</CardGroup>
+
+## What is FHEVM?
+
+FHEVM brings Fully Homomorphic Encryption (FHE) to the Ethereum Virtual Machine. It allows smart contracts to operate on encrypted data without ever decrypting it. This enables a new class of on-chain applications where sensitive data—balances, votes, bids, medical records—remains confidential throughout the entire computation lifecycle.
+
+### Your first encrypted contract
+
+Here's what a simple encrypted contract looks like:
+
+```solidity HelloFHEVM.sol
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import { FHE, euint32 } from "@fhevm/solidity/lib/FHE.sol";
+import { ZamaEthereumConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
+
+contract HelloFHEVM is ZamaEthereumConfig {
+    euint32 private secretNumber;
+
+    function setSecret(externalEuint32 encryptedValue, bytes calldata inputProof) external {
+        secretNumber = FHE.fromExternal(encryptedValue, inputProof);
+        FHE.allowThis(secretNumber);
+    }
+
+    function addToSecret(externalEuint32 encryptedValue, bytes calldata inputProof) external {
+        euint32 input = FHE.fromExternal(encryptedValue, inputProof);
+        secretNumber = FHE.add(secretNumber, input);
+        FHE.allowThis(secretNumber);
+    }
+}
+```
+
+This contract stores an encrypted number and performs addition on it—all without ever revealing the value.
+
+## Program structure
+
+The bootcamp consists of **20 modules** organized into a 4-week progressive program:
+
+<Steps>
+  <Step title="Week 1: Foundation & operations">
+    Master FHE fundamentals, encrypted types, and all operations (arithmetic, bitwise, comparison)
+  </Step>
+  <Step title="Week 2: Core patterns">
+    Learn access control, encrypted inputs, decryption patterns, conditional logic, and randomness
+  </Step>
+  <Step title="Week 3: Applications & testing">
+    Build confidential tokens, voting systems, and auctions. Master testing and debugging
+  </Step>
+  <Step title="Week 4: Mastery & capstone">
+    Optimize gas usage, apply security best practices, explore DeFi patterns, and build your capstone DAO
+  </Step>
+</Steps>
+
+## What makes this bootcamp unique
+
+<CardGroup cols={2}>
+  <Card title="35 production contracts" icon="code">
+    All deployed and verified on Ethereum Sepolia testnet
+  </Card>
+  <Card title="328 passing tests" icon="check">
+    Comprehensive test coverage demonstrating best practices
+  </Card>
+  <Card title="Hands-on exercises" icon="hammer">
+    20 modules with starter templates and complete solutions
+  </Card>
+  <Card title="Real-world projects" icon="briefcase">
+    Build confidential ERC-20 tokens, voting systems, auctions, and a DAO
+  </Card>
+</CardGroup>
+
+## Technology stack
+
+| Layer | Technology |
+|-------|------------|
+| Encryption library | Zama TFHE-rs (underlying FHE engine) |
+| Solidity library | `@fhevm/solidity` (`FHE` library) |
+| Configuration | `ZamaEthereumConfig` base contract |
+| Development framework | Hardhat + fhEVM plugin |
+| Testing | Hardhat test / Foundry (mock mode) |
+| Frontend encryption | `@zama-fhe/relayer-sdk` (Relayer SDK) |
+| Network | Ethereum Sepolia / local fhEVM node |
+
+## Key FHE operations
+
+The bootcamp uses the **new FHEVM API** throughout:
+
+```solidity
+// Imports
+import { FHE, euint32, ebool } from "@fhevm/solidity/lib/FHE.sol";
+import { ZamaEthereumConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
+
+// Convert external encrypted input
+euint32 value = FHE.fromExternal(externalEncryptedInput, inputProof);
+
+// Arithmetic
+euint32 sum = FHE.add(a, b);
+euint32 product = FHE.mul(a, b);
+
+// Comparison
+ebool isGreater = FHE.gt(a, b);
+
+// Conditional selection (encrypted ternary)
+euint32 result = FHE.select(condition, valueIfTrue, valueIfFalse);
+
+// Access control
+FHE.allowThis(encryptedValue);
+FHE.allow(encryptedValue, addressToAllow);
+
+// Random number generation
+euint32 rand = FHE.randEuint32();
+```
+
+## Learning outcomes
+
+By completing this bootcamp, you will be able to:
+
+- Design and implement confidential smart contracts using FHEVM
+- Manage encrypted types (`ebool`, `euint8`-`euint256`, `eaddress`)
+- Perform operations on encrypted data without decryption
+- Implement proper access control for encrypted values
+- Build complete dApps with encrypted frontend integration
+- Test and debug FHE contracts effectively
+- Optimize gas costs for FHE operations
+- Apply security best practices for confidential contracts
+- Build production-ready confidential DeFi applications
+
+## Assessment system
+
+| Component | Weight | Description |
+|-----------|--------|-------------|
+| Quizzes | 20% | End-of-module knowledge checks (multiple choice + short answer) |
+| Exercises | 40% | Hands-on coding exercises graded on correctness, style, and security |
+| Capstone project | 40% | Original FHE application with documentation and presentation |
+
+**Passing score:** 70% overall, with at least 60% in each component.
+
+<Note>
+All 328 tests run locally in mock FHE mode—no testnet connection needed for development.
+</Note>
+
+## Ready to start?
+
+<CardGroup cols={2}>
+  <Card title="Quick start guide" icon="bolt" href="/quick-start">
+    Get set up in 10 minutes
+  </Card>
+  <Card title="Full installation" icon="wrench" href="/installation">
+    Detailed environment setup
+  </Card>
+</CardGroup>
+
+## Resources
+
+- [Zama Documentation](https://docs.zama.ai/fhevm)
+- [fhEVM Solidity Library](https://github.com/zama-ai/fhevm)
+- [Relayer SDK](https://github.com/zama-ai/relayer-sdk)
+- [Zama Community](https://community.zama.ai)
+- [GitHub Repository](https://github.com/Himess/fhevm-bootcamp)
+
+<Warning>
+This curriculum uses the **new FHEVM API** with the `FHE` library, `externalEuintXX` types, and `FHE.fromExternal(value, proof)`. Ensure you're using `@fhevm/solidity` version 0.10.0 or later.
+</Warning>

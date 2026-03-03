@@ -1,0 +1,218 @@
+---
+title: "Access Control (ACL)"
+description: "Master the FHEVM Access Control List system that governs who can use encrypted data"
+icon: "shield-check"
+---
+
+## Overview
+
+In FHEVM, all data is encrypted on-chain. The **Access Control List (ACL)** system determines which addresses can operate on encrypted values. Every ciphertext has an associated ACL that tracks authorized addresses.
+
+<Info>
+**Key insight:** Without proper ACL management, even the contract that created a ciphertext cannot use it in future transactions.
+</Info>
+
+## Why ACL is Necessary
+
+### The Problem
+
+Consider a token contract storing encrypted balances:
+
+```solidity
+mapping(address => euint64) private _balances;
+```
+
+Without ACL:
+- The contract itself cannot read stored ciphertexts in future transactions
+- Users cannot decrypt their own balances
+- Other contracts cannot interact with the ciphertexts
+
+### The Solution
+
+The ACL system provides **granular, per-ciphertext permissions**. Each time you create or update a ciphertext, you must explicitly grant access.
+
+## Core ACL Functions
+
+### `FHE.allowThis(handle)` — Self-Permission
+
+Grants the **current contract** permission to use a ciphertext.
+
+```solidity ACLDemo.sol
+euint32 private _ownerSecret;
+
+function setSecret(uint32 value) external onlyOwner {
+    _ownerSecret = FHE.asEuint32(value);
+    FHE.allowThis(_ownerSecret);  // Contract can use _ownerSecret later
+    FHE.allow(_ownerSecret, msg.sender);
+}
+```
+
+<Warning>
+**Critical:** Every FHE operation produces a **new ciphertext** with a **new handle**. You must call `FHE.allowThis()` after every state variable assignment.
+</Warning>
+
+```solidity ACLDemo.sol
+function incrementSecret() external onlyOwner {
+    _ownerSecret = FHE.add(_ownerSecret, 1);
+    // _ownerSecret is now a NEW ciphertext — must re-grant access
+    FHE.allowThis(_ownerSecret);
+    FHE.allow(_ownerSecret, msg.sender);
+}
+```
+
+### `FHE.allow(handle, address)` — Grant to Specific Address
+
+Grants persistent access to a specific address (EOA or contract).
+
+```solidity MultiUserVault.sol
+function deposit(externalEuint64 encAmount, bytes calldata inputProof) external {
+    euint64 amount = FHE.fromExternal(encAmount, inputProof);
+    _deposits[msg.sender] = FHE.add(_deposits[msg.sender], amount);
+    FHE.allowThis(_deposits[msg.sender]);      // Contract access
+    FHE.allow(_deposits[msg.sender], msg.sender);   // User access
+}
+```
+
+<Tip>
+Always grant both `FHE.allowThis()` and `FHE.allow(handle, user)` for user-owned data:
+- `allowThis` — contract can use it in future operations
+- `allow(user)` — user can decrypt it client-side
+</Tip>
+
+### `FHE.allowTransient(handle, address)` — Temporary Permission
+
+Grants access that lasts only for the **current transaction**. Useful for inter-contract calls.
+
+```solidity ACLDemo.sol
+function grantTransientAccess(address to) external onlyOwner {
+    FHE.allowTransient(_ownerSecret, to);
+    // 'to' can use _ownerSecret only within this transaction
+}
+```
+
+| Feature | `FHE.allow()` | `FHE.allowTransient()` |
+|---------|---------------|----------------------|
+| Duration | Permanent | Transaction only |
+| Storage cost | Higher | Lower |
+| Use case | User access | Inter-contract calls |
+
+### `FHE.makePubliclyDecryptable(handle)` — Public Reveal
+
+Makes an encrypted value decryptable by **anyone**. Use for vote results, auction winners, etc.
+
+```solidity ACLDemo.sol
+function makePublic() external onlyOwner {
+    FHE.makePubliclyDecryptable(_ownerSecret);
+}
+```
+
+<Warning>
+**Irreversible:** Once made publicly decryptable, ANYONE can see the plaintext. Use only for values meant to be public.
+</Warning>
+
+### `FHE.isSenderAllowed(handle)` — Permission Check
+
+Returns `true` if `msg.sender` has access to a ciphertext.
+
+```solidity ACLDemo.sol
+function getSecret() external view returns (euint32) {
+    require(FHE.isSenderAllowed(_ownerSecret), "Not authorized to access secret");
+    return _ownerSecret;
+}
+```
+
+## Common Patterns
+
+### Pattern 1: Multi-User Vault with ACL Isolation
+
+```solidity MultiUserVault.sol
+mapping(address => euint64) private _deposits;
+
+function withdraw(externalEuint64 encAmount, bytes calldata inputProof) external {
+    euint64 amount = FHE.fromExternal(encAmount, inputProof);
+    ebool hasEnough = FHE.ge(_deposits[msg.sender], amount);
+    euint64 withdrawAmount = FHE.select(hasEnough, amount, FHE.asEuint64(0));
+    _deposits[msg.sender] = FHE.sub(_deposits[msg.sender], withdrawAmount);
+    
+    // Reset ACL after operation
+    FHE.allowThis(_deposits[msg.sender]);
+    FHE.allow(_deposits[msg.sender], msg.sender);
+}
+```
+
+### Pattern 2: Secret Sharing
+
+```solidity UserDecrypt.sol
+function shareSecret(address to) external {
+    require(euint32.unwrap(_userSecrets[msg.sender]) != 0, "No secret stored");
+    FHE.allow(_userSecrets[msg.sender], to);
+    // Now 'to' can decrypt msg.sender's secret
+}
+```
+
+## Critical ACL Rules
+
+<CardGroup cols={2}>
+  <Card title="New Handle = New ACL" icon="rotate">
+    Every FHE operation creates a new ciphertext with an **empty ACL**.
+  </Card>
+  <Card title="No Automatic Access" icon="ban">
+    The creator gets no automatic access — always call `FHE.allowThis()`.
+  </Card>
+  <Card title="Per-Handle, Not Per-Variable" icon="fingerprint">
+    ACL is tied to the handle, not the storage slot.
+  </Card>
+  <Card title="No Direct Revocation" icon="user-slash">
+    Create a new ciphertext to "revoke" — old handle retains access.
+  </Card>
+</CardGroup>
+
+## Common Mistakes
+
+### Mistake 1: Forgetting `FHE.allowThis()` After Update
+
+```solidity
+// ❌ WRONG
+function update() public {
+    _value = FHE.add(_value, FHE.asEuint32(1));
+    // Next transaction using _value WILL FAIL
+}
+
+// ✅ CORRECT
+function update() public {
+    _value = FHE.add(_value, FHE.asEuint32(1));
+    FHE.allowThis(_value);
+}
+```
+
+### Mistake 2: Not Granting User Access
+
+```solidity
+// ❌ WRONG
+function setBalance(address user, uint64 amount) public {
+    _balances[user] = FHE.asEuint64(amount);
+    FHE.allowThis(_balances[user]);
+    // User cannot decrypt their own balance!
+}
+
+// ✅ CORRECT
+function setBalance(address user, uint64 amount) public {
+    _balances[user] = FHE.asEuint64(amount);
+    FHE.allowThis(_balances[user]);
+    FHE.allow(_balances[user], user);
+}
+```
+
+## Summary
+
+| Function | Purpose | Duration |
+|----------|---------|----------|
+| `FHE.allowThis(handle)` | Grant current contract access | Persistent |
+| `FHE.allow(handle, addr)` | Grant specific address access | Persistent |
+| `FHE.allowTransient(handle, addr)` | Grant temporary access | Transaction only |
+| `FHE.makePubliclyDecryptable(handle)` | Reveal to everyone | Persistent (irreversible) |
+| `FHE.isSenderAllowed(handle)` | Check if msg.sender has access | N/A (view) |
+
+<Card title="Next Module" icon="arrow-right" href="/modules/06-encrypted-inputs">
+  Learn how users submit truly private data using client-side encryption
+</Card>

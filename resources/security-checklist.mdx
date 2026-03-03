@@ -1,0 +1,312 @@
+---
+title: Security Audit Checklist
+description: Comprehensive security review checklist for FHE smart contracts
+---
+
+A structured security review checklist for FHE smart contracts. Use this during development, code review, and security audits.
+
+## How to Use This Checklist
+
+1. Go through each section during development (shift-left security)
+2. Run through the complete checklist before deployment
+3. During audits, check every item and document findings
+4. Mark each item: PASS / FAIL / N/A with notes
+
+## 1. Access Control (ACL)
+
+### 1.1 Contract Self-Permission
+
+<Check>
+  **Every stored encrypted value has `FHE.allowThis()` called after assignment.**
+  
+  Every FHE operation produces a new ciphertext with an empty ACL. If the contract stores it without `FHE.allowThis()`, the contract cannot read its own value in subsequent transactions.
+</Check>
+
+<Check>
+  **`FHE.allowThis()` is called after every operation that modifies a stored encrypted value.**
+  
+  It is not enough to call `allowThis` only on initial assignment. Every reassignment creates a new ciphertext.
+</Check>
+
+### 1.2 User Permissions
+
+<Check>
+  **Users are granted `FHE.allow()` for encrypted values they should be able to view.**
+  
+  Without explicit permission, users cannot decrypt or re-encrypt their own data.
+</Check>
+
+<Check>
+  **Permissions are not granted to addresses that should not have access.**
+  
+  Audit every `FHE.allow()` call. Ask: "Should this address be able to see this value?"
+</Check>
+
+<Check>
+  **Permissions are updated after every state change, not just initial assignment.**
+  
+  After a transfer, both the sender and recipient need fresh permissions on their updated balances.
+</Check>
+
+### 1.3 Cross-Contract Permissions
+
+<Check>
+  **When returning encrypted values to another contract, `FHE.allowTransient()` is used for the caller.**
+  
+  Without this, the calling contract will fail to use the returned ciphertext.
+</Check>
+
+<Check>
+  **`FHE.allowTransient()` is preferred over `FHE.allow()` for cross-contract calls.**
+  
+  Transient permissions expire at the end of the transaction, limiting the exposure window.
+</Check>
+
+## 2. Information Leakage
+
+### 2.1 Revert Leakage
+
+<Check>
+  **The contract does NOT revert based on encrypted conditions.**
+  
+  Example: `require(balance >= amount)` on encrypted values leaks whether the condition is true. Use `FHE.select()` instead.
+</Check>
+
+<Check>
+  **All business logic involving encrypted data uses the "silent fail" pattern.**
+  
+  Compute both branches, select the result.
+</Check>
+
+### 2.2 Event Leakage
+
+<Check>
+  **Events do not emit encrypted values in plaintext.**
+  
+  Emitting `uint256 amount` in a Transfer event defeats the purpose of encrypting balances.
+</Check>
+
+<Check>
+  **Events are carefully designed to not leak metadata.**
+  
+  Example: If you emit `Transfer(from, to)` every time, the transfer graph is still visible.
+</Check>
+
+### 2.3 Gas Leakage
+
+<Check>
+  **All code paths consume approximately the same gas regardless of encrypted input values.**
+  
+  Different gas consumption reveals information about the encrypted values (side-channel attack).
+</Check>
+
+<Check>
+  **There are no early returns or short-circuit evaluations based on encrypted conditions.**
+</Check>
+
+<Check>
+  **Loop iterations do not depend on encrypted values.**
+  
+  If a loop runs a variable number of times based on an encrypted value, the gas usage reveals the value.
+</Check>
+
+## 3. Input Handling
+
+### 3.1 Input Conversion
+
+<Check>
+  **All external encrypted inputs use `externalEuintXX` types (not `euintXX`).**
+  
+  External functions cannot accept `euint32` directly from user transactions.
+</Check>
+
+<Check>
+  **All external inputs are converted with `FHE.fromExternal()` before use.**
+</Check>
+
+<Check>
+  **Converted inputs have `FHE.allowThis()` called if they will be stored.**
+</Check>
+
+### 3.2 Input Validation
+
+<Check>
+  **Encrypted inputs are validated where possible using encrypted comparisons.**
+  
+  Example: Use `FHE.le(amount, maxAllowed)` to ensure an encrypted amount is within range, then use `FHE.select` to enforce it.
+</Check>
+
+## 4. Decryption Safety
+
+### 4.1 Decryption Pattern
+
+<Check>
+  **Decryption uses `FHE.makePubliclyDecryptable()` only for values that should be public.**
+  
+  Only call `makePubliclyDecryptable` when the value genuinely needs to be revealed on-chain.
+</Check>
+
+<Check>
+  **The contract enforces access control before calling `FHE.makePubliclyDecryptable()`.**
+  
+  Without proper checks, unauthorized callers could trigger decryption of sensitive values.
+</Check>
+
+### 4.2 Decryption Timing
+
+<Check>
+  **Decryption does not happen prematurely.**
+  
+  Example: revealing vote tallies before voting ends.
+</Check>
+
+<Check>
+  **The contract enforces timing constraints on when decryption can be requested.**
+</Check>
+
+## 5. Arithmetic Safety
+
+### 5.1 Overflow/Underflow
+
+<Check>
+  **The contract accounts for silent wrapping on overflow.**
+  
+  `FHE.add` on `euint8` with values 200 + 100 silently wraps to 44. There is no revert.
+</Check>
+
+<Check>
+  **Subtraction underflow is handled with the `FHE.select` pattern.**
+  
+  Always check `FHE.ge(a, b)` before `FHE.sub(a, b)` if underflow is not desired.
+</Check>
+
+### 5.2 Division
+
+<Check>
+  **Division by zero is handled.**
+  
+  The behavior of `FHE.div(a, 0)` on encrypted zero may vary. Validate or use `FHE.select` to handle.
+</Check>
+
+## 6. State Management
+
+### 6.1 Initialization
+
+<Check>
+  **Encrypted state variables are properly initialized before use.**
+  
+  Using an uninitialized `euint64` in operations may cause failures. Initialize with `FHE.asEuint64(0)`.
+</Check>
+
+### 6.2 Reentrancy
+
+<Check>
+  **Standard reentrancy protections are in place.**
+  
+  FHE does not change reentrancy risks. Use the checks-effects-interactions pattern or reentrancy guards.
+</Check>
+
+<Check>
+  **Encrypted state is updated before external calls.**
+</Check>
+
+## 7. Code Quality
+
+### 7.1 API Usage
+
+<Check>
+  **The contract uses the new FHEVM API (`FHE` library, `externalEuintXX`, `FHE.fromExternal()`).**
+</Check>
+
+<Check>
+  **The contract inherits `ZamaEthereumConfig` for proper configuration.**
+</Check>
+
+<Check>
+  **All imports are from `@fhevm/solidity/lib/FHE.sol` and `@fhevm/solidity/config/ZamaConfig.sol`.**
+</Check>
+
+### 7.2 Testing
+
+<Check>
+  **A comprehensive test suite exists covering happy paths, edge cases, failure modes, and ACL scenarios.**
+</Check>
+
+<Check>
+  **Tests verify that failed encrypted operations produce the correct "unchanged" state.**
+</Check>
+
+<Check>
+  **Tests verify ACL permissions: authorized users can access, unauthorized users cannot.**
+</Check>
+
+## Audit Report Template
+
+When completing a security review, document findings using this structure:
+
+```markdown
+## Finding [ID]: [Title]
+
+**Severity:** Critical / High / Medium / Low / Informational
+**Category:** [ACL | Leakage | Arithmetic | Input | Decryption | State | Protocol]
+**Location:** [contract.sol:line]
+
+### Description
+[What is the issue?]
+
+### Impact
+[What can go wrong? Who is affected?]
+
+### Proof of Concept
+[Steps to reproduce or exploit]
+
+### Recommendation
+[How to fix it]
+
+### Status
+[Open | Acknowledged | Fixed | Won't Fix]
+```
+
+## Top 10 Security Rules
+
+<CardGroup cols={2}>
+  <Card title="1. Call FHE.allowThis()" icon="lock">
+    After every encrypted state update. Missing ACL is the #1 bug.
+  </Card>
+  
+  <Card title="2. Never revert on encrypted conditions" icon="ban">
+    Use `FHE.select()` for the silent fail pattern.
+  </Card>
+  
+  <Card title="3. Never emit encrypted data" icon="broadcast-tower">
+    Design events carefully to prevent leakage.
+  </Card>
+  
+  <Card title="4. Ensure constant gas" icon="gas-pump">
+    Gas differences are a side channel.
+  </Card>
+  
+  <Card title="5. Use externalEuintXX for inputs" icon="upload">
+    Convert with `FHE.fromExternal()`.
+  </Card>
+  
+  <Card title="6. Verify ACL before returning" icon="shield-check">
+    Check access with `FHE.isSenderAllowed()`.
+  </Card>
+  
+  <Card title="7. Use the smallest type" icon="minimize">
+    Save gas, reduce attack surface.
+  </Card>
+  
+  <Card title="8. Handle overflow/underflow" icon="arrows-rotate">
+    FHE wraps silently.
+  </Card>
+  
+  <Card title="9. Document threat model" icon="file-lines">
+    What is protected? What is not?
+  </Card>
+  
+  <Card title="10. Test extensively" icon="vial">
+    Happy path, edge cases, ACL, failure modes.
+  </Card>
+</CardGroup>

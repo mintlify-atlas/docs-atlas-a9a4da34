@@ -1,0 +1,427 @@
+---
+title: Testing FHE Contracts
+description: Learn how to test fhEVM smart contracts using Hardhat with the encrypt-act-decrypt-assert pattern
+---
+
+# Testing FHE Contracts
+
+Testing Fully Homomorphic Encryption (FHE) contracts requires a different approach than standard Solidity testing. This guide shows you how to test fhEVM contracts using the Hardhat plugin and the encrypt-act-decrypt-assert pattern.
+
+## Setup Your Test Environment
+
+<Steps>
+  <Step title="Install the fhEVM Hardhat plugin">
+    Add the plugin to your `hardhat.config.ts`:
+
+    ```typescript hardhat.config.ts
+    import "@fhevm/hardhat-plugin";
+    import "@nomicfoundation/hardhat-ethers";
+    import type { HardhatUserConfig } from "hardhat/config";
+
+    const config: HardhatUserConfig = {
+      defaultNetwork: "hardhat",
+      networks: {
+        hardhat: {
+          accounts: {
+            mnemonic: "test test test test test test test test test test test junk",
+          },
+          chainId: 31337,
+        },
+      },
+      solidity: {
+        version: "0.8.27",
+        settings: {
+          optimizer: { enabled: true, runs: 800 },
+          evmVersion: "cancun",
+        },
+      },
+    };
+
+    export default config;
+    ```
+  </Step>
+
+  <Step title="Import the test utilities">
+    In your test file, import the necessary modules:
+
+    ```typescript
+    import { expect } from "chai";
+    import { ethers, fhevm } from "hardhat";
+    import { FhevmType } from "@fhevm/hardhat-plugin";
+    ```
+
+    The `fhevm` object provides:
+    - `createEncryptedInput()` - Create encrypted inputs for contract calls
+    - `userDecryptEuint()` - Decrypt numeric encrypted values
+    - `userDecryptEbool()` - Decrypt encrypted booleans
+  </Step>
+
+  <Step title="Set up your test suite">
+    Use `beforeEach` to deploy a fresh contract for each test:
+
+    ```typescript
+    describe("TestableVault", function () {
+      let vault: any;
+      let vaultAddress: string;
+      let owner: any;
+      let alice: any;
+      let bob: any;
+
+      beforeEach(async function () {
+        [owner, alice, bob] = await ethers.getSigners();
+        const Factory = await ethers.getContractFactory("TestableVault");
+        vault = await Factory.deploy();
+        await vault.waitForDeployment();
+        vaultAddress = await vault.getAddress();
+      });
+    });
+    ```
+  </Step>
+</Steps>
+
+## The Encrypt-Act-Decrypt-Assert Pattern
+
+All FHE tests follow this four-step pattern:
+
+<Steps>
+  <Step title="Encrypt - Create encrypted inputs">
+    ```typescript
+    const enc = await fhevm
+      .createEncryptedInput(vaultAddress, alice.address)
+      .add64(1000)  // Add a 64-bit encrypted value
+      .encrypt();
+    ```
+
+    Available input methods:
+    - `addBool(value)` - Encrypt a boolean
+    - `add8(value)` - Encrypt a uint8 (max: 255)
+    - `add16(value)` - Encrypt a uint16 (max: 65535)
+    - `add32(value)` - Encrypt a uint32
+    - `add64(value)` - Encrypt a uint64
+  </Step>
+
+  <Step title="Act - Call the contract with encrypted inputs">
+    ```typescript
+    await (await vault.connect(alice).deposit(
+      enc.handles[0],   // The encrypted handle
+      enc.inputProof    // The proof
+    )).wait();
+    ```
+
+    <Warning>
+    Always use the double-await pattern: `await (await contract.function()).wait()`
+    
+    The first `await` sends the transaction, the second `await` waits for it to be mined.
+    </Warning>
+  </Step>
+
+  <Step title="Decrypt - Read the encrypted result">
+    ```typescript
+    const handle = await vault.connect(alice).getBalance();
+    const clear = await fhevm.userDecryptEuint(
+      FhevmType.euint64,  // The type of the encrypted value
+      handle,              // The handle returned by the contract
+      vaultAddress,        // The contract address
+      alice                // The signer with ACL permission
+    );
+    ```
+  </Step>
+
+  <Step title="Assert - Verify the decrypted value">
+    ```typescript
+    expect(clear).to.equal(1000n);  // Always use BigInt (n suffix)
+    ```
+
+    <Note>
+    All decrypted values are BigInts. Always use the `n` suffix for expected values.
+    </Note>
+  </Step>
+</Steps>
+
+## Real Example: Testing Deposits
+
+Here's a complete test from the TestableVault contract:
+
+```typescript TestableVault.test.ts
+it("should deposit an encrypted amount and verify balance", async function () {
+  // ENCRYPT: Create encrypted input
+  const enc = await fhevm
+    .createEncryptedInput(vaultAddress, alice.address)
+    .add64(1000)
+    .encrypt();
+
+  // ACT: Call the contract
+  await (await vault.connect(alice).deposit(
+    enc.handles[0], enc.inputProof
+  )).wait();
+
+  // DECRYPT: Read the encrypted result
+  const handle = await vault.connect(alice).getBalance();
+  const clear = await fhevm.userDecryptEuint(
+    FhevmType.euint64, handle, vaultAddress, alice
+  );
+
+  // ASSERT: Verify the decrypted value
+  expect(clear).to.equal(1000n);
+});
+```
+
+## Testing Silent Failures
+
+FHE contracts cannot use `require()` on encrypted values, so failed operations don't revert. Instead, they "silently fail" by performing a no-op (usually subtracting/adding 0).
+
+<Warning>
+Never test for reverts on encrypted condition failures. The transaction will succeed, but state will be unchanged.
+</Warning>
+
+### Example: Overdraft Test
+
+```typescript
+it("should silently withdraw 0 when amount exceeds balance (no revert)", async function () {
+  // Setup: Alice has 1000
+  const encDeposit = await fhevm
+    .createEncryptedInput(vaultAddress, alice.address)
+    .add64(1000)
+    .encrypt();
+  await (await vault.connect(alice).deposit(
+    encDeposit.handles[0], encDeposit.inputProof
+  )).wait();
+
+  // Try to withdraw 9999 (more than balance)
+  const encW = await fhevm
+    .createEncryptedInput(vaultAddress, alice.address)
+    .add64(9999)
+    .encrypt();
+  
+  // This does NOT revert - it withdraws 0 instead
+  await (await vault.connect(alice).withdraw(
+    encW.handles[0], encW.inputProof
+  )).wait();
+
+  // Verify: balance is STILL 1000 (unchanged)
+  const handle = await vault.connect(alice).getBalance();
+  const clear = await fhevm.userDecryptEuint(
+    FhevmType.euint64, handle, vaultAddress, alice
+  );
+  expect(clear).to.equal(1000n);  // Balance unchanged = withdrawal failed
+});
+```
+
+## Testing Multi-User Scenarios
+
+Always test that encrypted data is properly isolated between users:
+
+```typescript
+it("should keep user balances independent", async function () {
+  // Alice deposits 1000
+  const encAlice = await fhevm
+    .createEncryptedInput(vaultAddress, alice.address)
+    .add64(1000)
+    .encrypt();
+  await (await vault.connect(alice).deposit(
+    encAlice.handles[0], encAlice.inputProof
+  )).wait();
+
+  // Bob deposits 2000
+  const encBob = await fhevm
+    .createEncryptedInput(vaultAddress, bob.address)
+    .add64(2000)
+    .encrypt();
+  await (await vault.connect(bob).deposit(
+    encBob.handles[0], encBob.inputProof
+  )).wait();
+
+  // Verify Alice's balance
+  const handleAlice = await vault.connect(alice).getBalance();
+  const clearAlice = await fhevm.userDecryptEuint(
+    FhevmType.euint64, handleAlice, vaultAddress, alice
+  );
+  expect(clearAlice).to.equal(1000n);
+
+  // Verify Bob's balance
+  const handleBob = await vault.connect(bob).getBalance();
+  const clearBob = await fhevm.userDecryptEuint(
+    FhevmType.euint64, handleBob, vaultAddress, bob
+  );
+  expect(clearBob).to.equal(2000n);
+});
+```
+
+## Testing ACL Boundaries
+
+Verify that ACL permissions work correctly:
+
+```typescript
+it("should prevent user B from decrypting user A's balance", async function () {
+  // Alice deposits
+  const enc = await fhevm
+    .createEncryptedInput(vaultAddress, alice.address)
+    .add64(1000)
+    .encrypt();
+  await (await vault.connect(alice).deposit(
+    enc.handles[0], enc.inputProof
+  )).wait();
+
+  // Alice can decrypt her own balance
+  const handle = await vault.connect(alice).getBalance();
+  const clear = await fhevm.userDecryptEuint(
+    FhevmType.euint64, handle, vaultAddress, alice
+  );
+  expect(clear).to.equal(1000n);
+
+  // Bob CANNOT decrypt Alice's balance handle
+  try {
+    await fhevm.userDecryptEuint(
+      FhevmType.euint64, handle, vaultAddress, bob
+    );
+    expect.fail("Bob should not be able to decrypt Alice's balance");
+  } catch (error) {
+    // Expected failure: Bob lacks ACL permission
+  }
+});
+```
+
+## Testing Event Emissions
+
+Events are your primary debugging tool in FHE contracts:
+
+```typescript
+it("should emit Deposited event with correct index", async function () {
+  const enc = await fhevm
+    .createEncryptedInput(vaultAddress, alice.address)
+    .add64(500)
+    .encrypt();
+  
+  const tx = await vault.connect(alice).deposit(
+    enc.handles[0], enc.inputProof
+  );
+  const receipt = await tx.wait();
+
+  // Find the event in the receipt logs
+  const event = receipt.logs.find(
+    (log: any) => log.fragment?.name === "Deposited"
+  );
+  expect(event).to.not.be.undefined;
+  expect(event.args[0]).to.equal(alice.address); // indexed user
+  expect(event.args[1]).to.equal(1n); // depositIndex
+});
+```
+
+## Common Testing Mistakes
+
+<Accordion title="Mistake 1: Forgetting .wait()">
+```typescript
+// WRONG: Not waiting for the transaction
+await contract.connect(alice).deposit(enc.handles[0], enc.inputProof);
+// Immediately tries to read balance before tx is mined
+
+// CORRECT: Wait for transaction receipt
+await (await contract.connect(alice).deposit(
+  enc.handles[0], enc.inputProof
+)).wait();
+```
+</Accordion>
+
+<Accordion title="Mistake 2: Using regular numbers instead of BigInt">
+```typescript
+// WRONG: JavaScript number comparison
+expect(clear).to.equal(42);
+
+// CORRECT: BigInt comparison
+expect(clear).to.equal(42n);
+```
+</Accordion>
+
+<Accordion title="Mistake 3: Mismatched signer in createEncryptedInput">
+```typescript
+// WRONG: Encrypted for alice, sent by bob
+const enc = await fhevm
+  .createEncryptedInput(contractAddress, alice.address)
+  .add64(100)
+  .encrypt();
+await contract.connect(bob).deposit(enc.handles[0], enc.inputProof);
+// Proof validation fails!
+
+// CORRECT: Match signer
+const enc = await fhevm
+  .createEncryptedInput(contractAddress, bob.address)
+  .add64(100)
+  .encrypt();
+await contract.connect(bob).deposit(enc.handles[0], enc.inputProof);
+```
+</Accordion>
+
+## Troubleshooting
+
+### Tests fail with "Unauthorized access to ciphertext"
+
+**Cause:** The contract forgot to call `FHE.allow()` or `FHE.allowThis()` after creating an encrypted value.
+
+**Solution:** Ensure every function that stores encrypted values includes:
+
+```solidity
+FHE.allowThis(encryptedValue);           // Contract can operate on it
+FHE.allow(encryptedValue, msg.sender);   // User can decrypt it
+```
+
+### Decryption returns unexpected values
+
+**Cause:** Using the wrong `FhevmType` enum value.
+
+**Solution:** Match the type to the contract's return type:
+
+| Contract return type | FhevmType parameter |
+|---------------------|---------------------|
+| `euint8` | `FhevmType.euint8` |
+| `euint16` | `FhevmType.euint16` |
+| `euint32` | `FhevmType.euint32` |
+| `euint64` | `FhevmType.euint64` |
+| `ebool` | Use `userDecryptEbool()` instead |
+
+### "Handle not found" errors
+
+**Cause:** Reading a value before the transaction that created it has been mined.
+
+**Solution:** Always wait for transactions:
+
+```typescript
+await (await contract.someFunction(...)).wait();
+// Now safe to read the result
+```
+
+## Best Practices Checklist
+
+- [ ] Use `beforeEach` to deploy a fresh contract for each test
+- [ ] Always match `createEncryptedInput` signer with `contract.connect()` signer
+- [ ] Use the correct `FhevmType` enum value when decrypting
+- [ ] Always use BigInt comparisons (`42n`, not `42`)
+- [ ] Test silent failures by verifying state is unchanged
+- [ ] Test with multiple users to verify isolation
+- [ ] Verify events for every state-changing function
+- [ ] Handle decryption errors gracefully in ACL boundary tests
+- [ ] Test both success and failure paths for encrypted conditions
+- [ ] Add plaintext counters for operations you want to track
+
+## Running Tests
+
+```bash
+# Run all tests
+npx hardhat test
+
+# Run specific test file
+npx hardhat test test/TestableVault.test.ts
+
+# Run with gas reporting
+REPORT_GAS=true npx hardhat test
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Deploying to Sepolia" icon="rocket" href="/guides/deploying-to-sepolia">
+    Learn how to deploy your tested contracts to the Sepolia testnet
+  </Card>
+  <Card title="Common Pitfalls" icon="triangle-exclamation" href="/guides/common-pitfalls">
+    Avoid the most frequent mistakes in fhEVM development
+  </Card>
+</CardGroup>

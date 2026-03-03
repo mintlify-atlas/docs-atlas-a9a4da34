@@ -1,0 +1,551 @@
+---
+title: 'Module 01: Introduction to FHE'
+description: 'Learn Fully Homomorphic Encryption theory, TFHE, fhEVM architecture, and real-world use cases'
+---
+
+<Note>
+**Level:** Beginner | **Duration:** 2 hours
+
+**Prerequisites:** [Module 00: Prerequisites](/modules/00-prerequisites)
+</Note>
+
+## Overview
+
+This module introduces the theory of Fully Homomorphic Encryption (FHE) and explains why it is a breakthrough for blockchain privacy. You will learn the fundamentals of encryption, understand the different types of homomorphic encryption, compare FHE with other privacy solutions, and discover how Zama's fhEVM brings FHE to Solidity smart contracts.
+
+## Learning Objectives
+
+By completing this module you will be able to:
+
+1. Explain the difference between symmetric and asymmetric encryption
+2. Define homomorphic encryption and describe what makes it unique
+3. Distinguish between PHE, SHE, and FHE
+4. Explain what TFHE (Torus FHE) is and why Zama chose it
+5. Articulate the privacy problem on public blockchains
+6. Compare FHE with ZK-Proofs, MPC, and TEE as privacy solutions
+7. Describe the fhEVM architecture: Smart Contract Layer, Coprocessor, Gateway, and KMS
+8. Identify real-world use cases for on-chain FHE
+
+---
+
+## 1. Encryption Fundamentals
+
+### Symmetric Encryption
+
+In symmetric encryption, the **same key** is used for both encryption and decryption.
+
+```
+Plaintext  --[Key]--> Ciphertext  --[Key]--> Plaintext
+```
+
+**Example:** AES (Advanced Encryption Standard)
+- Fast and efficient
+- Challenge: How do you securely share the key?
+- Use case: Encrypting data at rest, disk encryption, TLS session keys
+
+### Asymmetric Encryption
+
+In asymmetric encryption, two different keys are used: a **public key** for encryption and a **private key** for decryption.
+
+```
+Plaintext  --[Public Key]--> Ciphertext  --[Private Key]--> Plaintext
+```
+
+**Example:** RSA, Elliptic Curve Cryptography (ECC)
+- Solves the key distribution problem
+- Slower than symmetric encryption
+- Use case: HTTPS, digital signatures, blockchain wallets
+
+### The Limitation of Traditional Encryption
+
+With traditional encryption, if you want to perform any computation on encrypted data, you must:
+
+1. Decrypt the data first
+2. Perform the computation on the plaintext
+3. Re-encrypt the result
+
+This means that **whoever performs the computation must have access to the plaintext data**. This is a fundamental problem for privacy in cloud computing, blockchain, and any scenario where computation is delegated to an untrusted party.
+
+---
+
+## 2. What is Homomorphic Encryption?
+
+**Homomorphic Encryption (HE)** is a form of encryption that allows computations to be performed directly on encrypted data, without ever decrypting it. The result of the computation, when decrypted, is identical to the result of performing the same computation on the plaintext.
+
+### The Locked Ballot Box Analogy
+
+Imagine a voting scenario:
+
+1. Each voter writes their vote on a slip of paper and places it inside a **locked box** (encryption)
+2. The election authority can **shake, weigh, or manipulate** the locked boxes to tally the votes (computation on ciphertext) — without ever opening them
+3. At the end, a single trusted authority **unlocks the final result** (decryption) and announces the outcome
+
+At no point did anyone see an individual vote. Yet the final tally is mathematically correct.
+
+### Formal Definition
+
+For an encryption scheme `E` and a computation `f`:
+
+```
+D(f(E(a), E(b))) = f(a, b)
+```
+
+In other words: **decrypting the result of computing on encrypted values yields the same result as computing on the original plaintext values**.
+
+### A Simple Illustration
+
+```
+Encrypt(5) = X
+Encrypt(3) = Y
+
+X + Y = Z  (computed on ciphertexts, never decrypted)
+
+Decrypt(Z) = 8  (same as 5 + 3)
+```
+
+The server that computed `X + Y` never learned the values 5, 3, or 8.
+
+---
+
+## 3. Types of Homomorphic Encryption
+
+Not all homomorphic encryption schemes are created equal. They differ in which operations they support and how many times those operations can be applied.
+
+### Partially Homomorphic Encryption (PHE)
+
+PHE supports **one type of operation** (either addition or multiplication) an **unlimited** number of times.
+
+| Scheme | Operation | Year |
+|--------|----------|------|
+| RSA | Multiplication | 1977 |
+| Paillier | Addition | 1999 |
+| ElGamal | Multiplication | 1985 |
+
+**Limitation:** You cannot combine addition and multiplication, which means you cannot evaluate arbitrary functions.
+
+### Somewhat Homomorphic Encryption (SHE)
+
+SHE supports **both addition and multiplication**, but only for a **limited number of operations**. Each operation introduces noise. After too many operations, the noise overwhelms the signal and decryption fails.
+
+Think of it like a photocopy of a photocopy — each generation degrades quality.
+
+### Fully Homomorphic Encryption (FHE)
+
+FHE supports **both addition and multiplication** for an **unlimited number of operations**. It achieves this through **bootstrapping**, which periodically "refreshes" the ciphertext to reduce noise.
+
+| Type | Operations | # Operations | Arbitrary Functions? |
+|------|-----------|-------------|---------------------|
+| PHE | One | Unlimited | No |
+| SHE | Both | Limited | No |
+| FHE | Both | Unlimited | Yes |
+
+### Historical Timeline
+
+<Steps>
+  <Step title="1978">
+    Rivest, Adleman, and Dertouzos propose the idea of computing on encrypted data.
+  </Step>
+  <Step title="2009">
+    Craig Gentry publishes the first FHE construction (lattice-based). It was groundbreaking but extremely slow — a single operation took minutes.
+  </Step>
+  <Step title="2016">
+    TFHE scheme published by Chillotti, Gama, Georgieva, and Izabachene, enabling fast bootstrapped gate-by-gate evaluation.
+  </Step>
+  <Step title="2023">
+    Zama releases the fhEVM, bringing FHE to EVM-compatible smart contracts.
+  </Step>
+</Steps>
+
+---
+
+## 4. TFHE — Torus Fully Homomorphic Encryption
+
+### What is TFHE?
+
+TFHE (Torus Fully Homomorphic Encryption) is a specific FHE scheme that operates over the **torus** — a mathematical structure that can be visualized as the interval [0, 1) where the endpoints wrap around (like a clock).
+
+### Why TFHE?
+
+Among the various FHE schemes (BGV, BFV, CKKS, TFHE), TFHE has several advantages that make it ideal for blockchain:
+
+| Property | TFHE Advantage |
+|----------|---------------|
+| **Bootstrapping speed** | Very fast bootstrapping (milliseconds per gate) |
+| **Boolean and integer operations** | Natively supports operations on individual bits and small integers |
+| **Exact arithmetic** | No approximation errors (unlike CKKS) |
+| **Programmable bootstrapping** | Can evaluate a lookup table during bootstrapping |
+
+### How TFHE Works (High Level)
+
+<Steps>
+  <Step title="Encryption">
+    A plaintext value is encoded as a point on the torus, then noise is added to hide it. The noisy point is the ciphertext.
+  </Step>
+  <Step title="Computation">
+    Homomorphic operations (addition, multiplication, comparisons) are performed on the ciphertexts. Each operation increases the noise level.
+  </Step>
+  <Step title="Bootstrapping">
+    When noise gets too high, a special procedure "refreshes" the ciphertext, reducing noise back to a manageable level.
+  </Step>
+  <Step title="Decryption">
+    The private key is used to remove the noise and recover the original plaintext result.
+  </Step>
+</Steps>
+
+### Supported Data Types in Zama's TFHE Library
+
+| Plaintext Type | Encrypted Type | Description |
+|---------------|---------------|-------------|
+| `bool` | `ebool` | Encrypted boolean |
+| `uint8` | `euint8` | Encrypted 8-bit unsigned integer |
+| `uint16` | `euint16` | Encrypted 16-bit unsigned integer |
+| `uint32` | `euint32` | Encrypted 32-bit unsigned integer |
+| `uint64` | `euint64` | Encrypted 64-bit unsigned integer |
+| `uint128` | `euint128` | Encrypted 128-bit unsigned integer |
+| `uint256` | `euint256` | Encrypted 256-bit unsigned integer |
+| `address` | `eaddress` | Encrypted address |
+
+---
+
+## 5. The Privacy Problem on Blockchain
+
+### Everything is Public
+
+Public blockchains like Ethereum are radically transparent by design. Every transaction, every state variable, every function call is visible to everyone.
+
+### What is Exposed?
+
+| Data | Visibility | Problem |
+|------|-----------|----------|
+| **Token balances** | Fully public | Anyone can see how much you own |
+| **Transaction history** | Fully public | All transfers are traceable |
+| **DeFi positions** | Fully public | Liquidation levels visible to competitors |
+| **Voting choices** | Fully public | No secret ballot possible |
+| **Bids in auctions** | Fully public | Front-running and manipulation |
+| **Medical/identity data** | Cannot store | Regulation prevents public health data |
+
+### Real Consequences
+
+<Accordion title="Front-running (MEV)">
+When you submit a large swap transaction, bots can see it in the mempool, place a trade ahead of yours to move the price, and profit at your expense. This is called MEV (Maximal Extractable Value) and costs users billions of dollars per year.
+</Accordion>
+
+<Accordion title="No secret voting">
+On-chain governance votes are visible as they are cast, creating social pressure and enabling vote buying.
+</Accordion>
+
+<Accordion title="Business confidentiality">
+A company cannot use a public blockchain for payroll, supply chain, or competitive bidding without exposing sensitive data to competitors.
+</Accordion>
+
+### The `private` Keyword Misconception
+
+```solidity
+uint256 private secretNumber = 42;
+```
+
+<Note>
+The `private` keyword in Solidity only prevents **other contracts** from reading the variable. Anyone can read it directly from the blockchain's storage slots using tools like `eth_getStorageAt`. **There is no data privacy on a public blockchain by default.**
+</Note>
+
+---
+
+## 6. Privacy Solutions Compared
+
+### Zero-Knowledge Proofs (ZK-Proofs)
+
+**What it does:** Proves that a statement is true without revealing the underlying data.
+
+**Example:** "I can prove I have more than 100 tokens without telling you my exact balance."
+
+**Strengths:**
+- Well-researched, production-ready (zkSync, Starknet, Aztec)
+- Can provide both privacy and scalability (ZK-Rollups)
+
+**Limitations:**
+- Proves properties about data, but does not enable computation on hidden data
+- Complex circuit design required for each computation
+- Cannot hide state from the smart contract itself
+
+### Multi-Party Computation (MPC)
+
+**What it does:** Multiple parties jointly compute a function over their inputs without revealing those inputs to each other.
+
+**Strengths:**
+- No single point of trust
+- Mature research area
+
+**Limitations:**
+- Requires communication between all parties during computation (high latency)
+- Scales poorly with the number of parties
+- Not practical for on-chain computation
+
+### Trusted Execution Environments (TEE)
+
+**What it does:** Uses special hardware (like Intel SGX or ARM TrustZone) to create an isolated "enclave" where data is processed in plaintext but protected from the host system.
+
+**Strengths:**
+- Very fast — data is processed in plaintext inside the enclave
+- Relatively simple to implement
+
+**Limitations:**
+- Requires trust in the hardware manufacturer
+- History of side-channel attacks (Spectre, Meltdown, SGX-specific attacks)
+- Single point of failure if the hardware is compromised
+
+### Fully Homomorphic Encryption (FHE)
+
+**What it does:** Allows arbitrary computation directly on encrypted data. The data remains encrypted throughout the entire computation.
+
+**Strengths:**
+- Strongest privacy guarantee: data is never decrypted during computation
+- No hardware trust assumptions
+- Composable: encrypted outputs can be inputs to further computations
+
+**Limitations:**
+- Computationally expensive (10x-1000x overhead)
+- Requires careful key management
+- Still maturing in terms of developer tooling
+
+### Comparison Table
+
+| Property | ZK-Proofs | MPC | TEE | FHE |
+|----------|----------|-----|-----|-----|
+| **Data hidden during compute?** | From verifier | From each party | From host | From everyone |
+| **Compute on hidden data?** | No (proves properties) | Yes (jointly) | Yes (in enclave) | Yes (on cipher) |
+| **Hardware trust?** | No | No | Yes | No |
+| **Performance** | Fast (verify), Slow (prove) | Medium | Fast | Slow |
+| **On-chain ready?** | Yes (ZK-Rollups) | Partial | Partial | Yes (fhEVM) |
+
+---
+
+## 7. What is fhEVM?
+
+### About Zama
+
+**Zama** is a cryptography company founded in **2020** by **Rand Hindi** (CEO) and **Pascal Paillier** (CTO), headquartered in **Paris, France**.
+
+**Key facts:**
+- **Founded:** 2020, Paris, France
+- **Funding:** Over $70M raised (Series A led by Multicoin Capital and Protocol Labs, 2024)
+- **Team:** 70+ researchers and engineers, including world-leading cryptographers
+- **Open source:** All core libraries (TFHE-rs, Concrete, fhEVM) are open-source under BSD license
+
+**Products:**
+- **TFHE-rs** — Pure Rust implementation of the TFHE scheme
+- **Concrete** — FHE compiler for Python/ML workloads
+- **fhEVM** — FHE for Ethereum smart contracts (what this bootcamp teaches)
+- **fhEVM Coprocessor** — Off-chain FHE computation engine for blockchain
+
+### Definition
+
+**fhEVM** is an open-source framework developed by Zama that brings Fully Homomorphic Encryption to the Ethereum Virtual Machine. It allows Solidity developers to write smart contracts that operate on encrypted data using a familiar syntax.
+
+### The Key Insight
+
+**Traditional blockchain:**
+```
+Smart Contract computes on PLAINTEXT → Everyone sees everything
+```
+
+**fhEVM blockchain:**
+```
+Smart Contract computes on CIPHERTEXT → Nobody sees anything (except authorized parties)
+```
+
+### What Changes for Developers?
+
+| Standard Solidity | fhEVM Solidity |
+|-------------------|----------------|
+| `uint256 balance` | `euint64 balance` |
+| `balance >= amount` | `FHE.le(amount, balance)` |
+| `balance -= amount` | `balance = FHE.sub(balance, amount)` |
+| `if (condition) {...}` | `FHE.select(condition, valueIfTrue, valueIfFalse)` |
+| Anyone can read `balance` | Only authorized addresses can decrypt `balance` |
+
+---
+
+## 8. fhEVM Architecture
+
+The fhEVM ecosystem consists of four main components:
+
+```
+┌─────────────────────┐
+│   User / dApp       │
+│  (Frontend + SDK)   │
+└──────────┬──────────┘
+           │ Encrypted inputs
+           ▼
+┌─────────────────────┐        ┌─────────────────────┐
+│  Smart Contract     │◄──────►│   Coprocessor       │
+│  Layer (EVM)        │        │   (FHE Engine)      │
+└──────────┬──────────┘        └─────────────────────┘
+           │ Decryption requests
+           ▼
+┌─────────────────────┐        ┌─────────────────────┐
+│     Gateway         │◄──────►│       KMS           │
+│ (Access Control)    │        │ (Key Management)    │
+└─────────────────────┘        └─────────────────────┘
+```
+
+### Smart Contract Layer
+
+This is the familiar EVM execution environment. Smart contracts are written in Solidity using Zama's `fhevm` library.
+
+**Key points:**
+- Contracts look like normal Solidity, with encrypted types and FHE operations
+- The EVM itself does not perform the FHE computations — it delegates them
+- Encrypted values are stored on-chain as ciphertext handles
+
+### Coprocessor
+
+The coprocessor is the computational engine that performs the actual FHE operations.
+
+**Key points:**
+- Performs all FHE operations: addition, subtraction, multiplication, comparison, bitwise operations, shifts, etc.
+- Handles bootstrapping to refresh ciphertexts
+- Runs off-chain but produces results that are verifiable on-chain
+
+### Gateway
+
+The Gateway is the access control layer that mediates decryption requests.
+
+**Key points:**
+- Enforces on-chain access control: only addresses explicitly authorized by the contract can request decryption
+- Acts as an intermediary between the blockchain and the KMS
+- Supports both synchronous (callback-based) and asynchronous decryption patterns
+
+### KMS (Key Management Service)
+
+The KMS is a distributed threshold decryption service that holds the global FHE secret key.
+
+**Key points:**
+- The global FHE key is split across multiple parties using threshold cryptography
+- No single party can decrypt data on their own
+- Decryption requires a threshold number of parties to cooperate
+- The KMS only decrypts values when authorized by the Gateway
+
+---
+
+## 9. Use Cases
+
+FHE on blockchain unlocks entirely new categories of applications.
+
+### Confidential DeFi
+
+| Application | What FHE Enables |
+|-------------|------------------|
+| **Private token transfers** | Transfer amounts are hidden; only sender and receiver know the value |
+| **Dark pool trading** | Orders are matched without revealing prices or quantities |
+| **Private lending** | Collateral ratios and loan amounts are confidential |
+| **MEV protection** | Transaction details are encrypted, preventing front-running |
+| **Private yield farming** | Strategy positions are hidden from competitors |
+
+### Private Voting
+
+On-chain governance currently has a fundamental flaw: votes are public as they are cast.
+
+With FHE:
+- Each vote is encrypted. Nobody can see individual votes during the voting period.
+- The smart contract tallies encrypted votes homomorphically.
+- Only the final result is decrypted after the voting period ends.
+- True secret ballot on-chain.
+
+### Sealed-Bid Auctions
+
+- Bidders submit encrypted bids
+- The contract compares encrypted bids to determine the winner
+- Only the winning bid amount is revealed
+- Losing bids remain confidential
+
+### Confidential Gaming
+
+| Game Type | Privacy Benefit |
+|-----------|----------------|
+| **Card games** | Players' hands are encrypted; the contract deals and evaluates hands without seeing them |
+| **Strategy games** | Fog-of-war: players cannot see opponents' hidden units or resources |
+| **Lottery/RNG** | Random numbers can be generated and used without revealing them prematurely |
+
+### Identity and Compliance
+
+- **Private KYC:** A contract can verify "this user is over 18" without revealing the user's identity
+- **Soulbound tokens:** Credentials and attestations that are verifiable but not publicly readable
+- **Selective disclosure:** Users control exactly which attributes they reveal to which contracts
+
+---
+
+## 10. Real-World Milestones
+
+### The $ZAMA Token and Encrypted ICO (January 2026)
+
+In January 2026, Zama conducted the **first encrypted ICO on Ethereum** — a confidential sealed-bid Dutch auction where bid amounts were encrypted using FHE.
+
+**How it worked:**
+1. Participants submitted bids with **public price** but **encrypted amounts**
+2. The clearing price was calculated **homomorphically, directly on encrypted data**
+3. No participant, bot, or organizer could see individual bid amounts
+4. After the auction closed, only the aggregate results were decrypted
+
+**Auction Results (January 21-24, 2026):**
+
+| Metric | Value |
+|--------|-------|
+| Total Value Shielded | $121.3M |
+| Total Committed | $118.5M |
+| Unique Bidders | 11,103 |
+| Total Bids Executed | 24,697 |
+| Clearing Price | $0.05 per ZAMA |
+| Oversubscription | 218% |
+
+<Note>
+The Zama auction app became the **most-used application on Ethereum on January 24th** — surpassing USDT, USDC, and Uniswap in transaction volume.
+</Note>
+
+### First Confidential USDT Transfer
+
+With the mainnet launch, Zama completed the **first confidential USDT (cUSDT) transfer** on Ethereum — proving that FHE can handle real-world token transfers at production scale.
+
+### Zama Developer Program
+
+The Zama Developer Program distributes **$20,000 monthly** across two competitive tracks:
+
+| Track | Monthly Prize | Format |
+|-------|--------------|--------|
+| **Builder Track** | up to $5,000 | Build complete demo apps (smart contract + frontend + tests + docs) |
+| **Bounty Track** | up to $5,000 | Build Hardhat-based fhEVM example repositories and educational resources |
+| **Startup Track** | Rolling | Year of free premium support, VC introductions, 1:1 mentoring |
+
+Learn more: [zama.org/developer-hub](https://www.zama.org/developer-hub)
+
+---
+
+## Summary
+
+| Concept | Definition |
+|---------|------------|
+| **Homomorphic Encryption** | Encryption that allows computation on ciphertext |
+| **PHE** | Supports one operation (add OR multiply), unlimited times |
+| **SHE** | Supports both operations, limited number of times |
+| **FHE** | Supports both operations, unlimited times (via bootstrapping) |
+| **TFHE** | A specific FHE scheme based on torus math, used by Zama |
+| **fhEVM** | Zama's framework bringing FHE to the EVM via Solidity |
+| **Coprocessor** | Performs the actual FHE computations off-chain |
+| **Gateway** | Enforces access control for decryption requests |
+| **KMS** | Distributed threshold decryption service |
+
+### The Big Picture
+
+Public blockchains solved the problem of **trust** — you do not need to trust a central authority. But they created a problem of **privacy** — everyone can see everything. FHE solves the privacy problem without sacrificing the trustlessness that makes blockchain valuable.
+
+With fhEVM, Solidity developers can build applications that were previously impossible:
+- Private DeFi that protects users from MEV
+- True secret ballot voting
+- Sealed-bid auctions
+- Confidential identity verification
+- Private gaming with hidden information
+
+---
+
+<Note>
+**Next Module:** [Module 02: Development Setup](/modules/02-development-setup)
+</Note>

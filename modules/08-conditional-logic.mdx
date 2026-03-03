@@ -1,0 +1,304 @@
+---
+title: "Conditional Logic"
+description: "Master branch-free programming with FHE.select() — the encrypted equivalent of if/else"
+icon: "code-branch"
+---
+
+## Overview
+
+In standard Solidity, you write `if (balance >= amount) { ... }` to branch on a condition. With encrypted values, this is **impossible** — you cannot branch on an encrypted boolean because the EVM does not know whether it is true or false.
+
+FHEVM solves this with `FHE.select()`, an encrypted ternary operator that evaluates **both** branches and picks the correct result — all while keeping the condition encrypted.
+
+## Why Branching Fails with Encrypted Data
+
+### The Problem
+
+```solidity
+// ❌ THIS DOES NOT WORK with encrypted values
+ebool hasEnough = FHE.ge(balance, amount);
+
+if (hasEnough) {  // ERROR: Cannot convert ebool to bool
+    balance = FHE.sub(balance, amount);
+}
+```
+
+The EVM needs a plaintext `bool` for `if` statements. An `ebool` is an encrypted value — the EVM cannot read it without decryption.
+
+### The Solution: Compute Both Branches
+
+Instead of choosing which code path to execute, you **execute both paths** and use `FHE.select()` to pick the correct result:
+
+```solidity
+ebool hasEnough = FHE.ge(balance, amount);
+euint64 newBalance = FHE.sub(balance, amount);    // Path A: deduct
+balance = FHE.select(hasEnough, newBalance, balance);
+// If hasEnough: balance = newBalance
+// If !hasEnough: balance = balance (unchanged)
+```
+
+## The Silent Failure Pattern
+
+<Info>
+**Critical design pattern:** Instead of reverting on failure, operations always succeed but transfer 0 (or perform no change) when conditions aren't met.
+</Info>
+
+**Why?** If a transaction reverts, an observer learns the condition failed (e.g., "balance was insufficient"). This leaks private information. With `FHE.select()`, both outcomes execute identically — the observer cannot distinguish success from failure.
+
+This pattern appears throughout FHEVM development:
+- **Confidential ERC-20:** Transfers send 0 on insufficient balance
+- **Voting:** Duplicate votes are silently ignored
+- **Auctions:** Invalid bids have no effect
+- **DeFi:** Operations fail silently on insufficient collateral
+
+## `FHE.select()` — The Encrypted Ternary
+
+### Syntax
+
+```solidity
+FHE.select(condition, valueIfTrue, valueIfFalse)
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `condition` | `ebool` | Encrypted boolean condition |
+| `valueIfTrue` | `euintXX` / `ebool` / `eaddress` | Value returned when condition is true |
+| `valueIfFalse` | `euintXX` / `ebool` / `eaddress` | Value returned when condition is false |
+| **Returns** | Same as value types | The selected encrypted value |
+
+<Warning>
+**Type rules:**
+- `valueIfTrue` and `valueIfFalse` must be the **same type**
+- Works with all encrypted types: `euint8` through `euint256`, `ebool`, `eaddress`
+</Warning>
+
+### Basic Examples
+
+```solidity ConditionalDemo.sol
+// Ternary: result = (a > b) ? a : b
+ebool aIsLarger = FHE.gt(a, b);
+euint32 result = FHE.select(aIsLarger, a, b);  // max(a, b)
+
+// Select encrypted address
+eaddress winner = FHE.select(aWins, playerA, playerB);
+```
+
+## Comparison Operators Reference
+
+All encrypted comparison operators return `ebool`:
+
+| Operator | Description | Example |
+|----------|-------------|---------||
+| `FHE.eq(a, b)` | Equal | `FHE.eq(encAge, FHE.asEuint32(18))` |
+| `FHE.ne(a, b)` | Not equal | `FHE.ne(encStatus, FHE.asEuint8(0))` |
+| `FHE.lt(a, b)` | Less than | `FHE.lt(encBid, encReserve)` |
+| `FHE.le(a, b)` | Less than or equal | `FHE.le(encAge, FHE.asEuint32(65))` |
+| `FHE.gt(a, b)` | Greater than | `FHE.gt(encBalance, encCost)` |
+| `FHE.ge(a, b)` | Greater than or equal | `FHE.ge(encBalance, encPrice)` |
+
+<Warning>
+**Type restrictions:**
+- `euint256` only supports `FHE.eq()` and `FHE.ne()` — NO ordering comparisons
+- `eaddress` only supports `FHE.eq()` and `FHE.ne()`
+</Warning>
+
+## Common Patterns
+
+### Pattern 1: Safe Subtraction (No Underflow)
+
+```solidity ConditionalDemo.sol
+function safeSub(uint32 a, uint32 b) external {
+    euint32 encA = FHE.asEuint32(a);
+    euint32 encB = FHE.asEuint32(b);
+    ebool canSub = FHE.ge(encA, encB);
+    euint32 diff = FHE.sub(encA, encB);
+    _result = FHE.select(canSub, diff, FHE.asEuint32(0));
+    FHE.allowThis(_result);
+}
+```
+
+### Pattern 2: Clamp (Min and Max Bound)
+
+```solidity ConditionalDemo.sol
+function clampBuiltin(uint32 value, uint32 minVal, uint32 maxVal) external {
+    euint32 encVal = FHE.asEuint32(value);
+    euint32 encMin = FHE.asEuint32(minVal);
+    euint32 encMax = FHE.asEuint32(maxVal);
+    euint32 raised = FHE.max(encVal, encMin);  // if value < min, use min
+    _result = FHE.min(raised, encMax);         // if value > max, use max
+    FHE.allowThis(_result);
+}
+```
+
+<Tip>
+`FHE.min()` and `FHE.max()` are built-in and internally use `FHE.select()`. You can also write them manually:
+
+```solidity
+// Manual min
+ebool isSmaller = FHE.lt(a, b);
+euint32 minVal = FHE.select(isSmaller, a, b);
+```
+</Tip>
+
+### Pattern 3: Conditional Transfer
+
+```solidity MultiUserVault.sol
+function withdraw(externalEuint64 encAmount, bytes calldata inputProof) external {
+    euint64 amount = FHE.fromExternal(encAmount, inputProof);
+    ebool hasEnough = FHE.ge(_deposits[msg.sender], amount);
+    
+    // Compute both outcomes
+    euint64 withdrawAmount = FHE.select(hasEnough, amount, FHE.asEuint64(0));
+    
+    // Silent failure: if insufficient balance, withdraw 0
+    _deposits[msg.sender] = FHE.sub(_deposits[msg.sender], withdrawAmount);
+    
+    FHE.allowThis(_deposits[msg.sender]);
+    FHE.allow(_deposits[msg.sender], msg.sender);
+}
+```
+
+### Pattern 4: Min/Max of Multiple Values
+
+```solidity EncryptedMinMax.sol
+// Find min of three encrypted values
+function findMinOfThree(uint32 a, uint32 b, uint32 c) external {
+    euint32 encA = FHE.asEuint32(a);
+    euint32 encB = FHE.asEuint32(b);
+    euint32 encC = FHE.asEuint32(c);
+
+    ebool abLess = FHE.lt(encA, encB);
+    euint32 minAB = FHE.select(abLess, encA, encB);
+    ebool abcLess = FHE.lt(minAB, encC);
+    _resultA = FHE.select(abcLess, minAB, encC);
+
+    FHE.allowThis(_resultA);
+}
+```
+
+## Nested Selects: Multi-Way Conditions
+
+For multi-way branching (like switch/case), nest multiple `FHE.select()` calls:
+
+### Example: Tiered Pricing
+
+```solidity
+// Price tiers:
+// quantity >= 100 -> price = 5
+// quantity >= 50  -> price = 8
+// quantity >= 10  -> price = 10
+// quantity < 10   -> price = 15
+
+function getPrice(euint32 quantity) internal returns (euint32) {
+    euint32 price = FHE.asEuint32(15);  // default: < 10
+
+    price = FHE.select(FHE.ge(quantity, FHE.asEuint32(10)), FHE.asEuint32(10), price);
+    price = FHE.select(FHE.ge(quantity, FHE.asEuint32(50)), FHE.asEuint32(8), price);
+    price = FHE.select(FHE.ge(quantity, FHE.asEuint32(100)), FHE.asEuint32(5), price);
+
+    FHE.allowThis(price);
+    return price;
+}
+```
+
+## Boolean Logic with Encrypted Conditions
+
+You can combine multiple encrypted conditions:
+
+### Encrypted AND / OR / NOT
+
+```solidity
+ebool encAnd = FHE.and(condA, condB);
+ebool encOr = FHE.or(condA, condB);
+ebool encNot = FHE.not(condition);
+```
+
+### Complex Condition Example
+
+```solidity
+// Transfer allowed if: sender has enough AND recipient is not blacklisted
+ebool hasEnough = FHE.ge(_balances[msg.sender], amount);
+ebool notBlacklisted = FHE.ne(_status[to], FHE.asEuint8(BLACKLISTED));
+ebool canTransfer = FHE.and(hasEnough, notBlacklisted);
+
+_balances[msg.sender] = FHE.select(canTransfer, newSenderBal, _balances[msg.sender]);
+_balances[to] = FHE.select(canTransfer, newReceiverBal, _balances[to]);
+```
+
+## Gas Optimization Tips
+
+<CardGroup cols={2}>
+  <Card title="Reuse Encrypted Constants" icon="recycle">
+    ```solidity
+    // ✅ GOOD: Create once, reuse
+    euint32 zero = FHE.asEuint32(0);
+    result = FHE.select(cond1, zero, result);
+    result = FHE.select(cond2, zero, result);
+    ```
+  </Card>
+  <Card title="Use Built-in Min/Max" icon="bolt">
+    ```solidity
+    // ✅ Use built-in instead of manual select
+    value = FHE.min(value, maxEnc);
+    ```
+  </Card>
+</CardGroup>
+
+<Warning>
+**Remember:** Both branches **always execute**. Gas cost is the sum of both paths.
+</Warning>
+
+## Common Mistakes
+
+### Mistake 1: Trying to Use `if` with `ebool`
+
+```solidity
+// ❌ WRONG
+if (FHE.gt(a, b)) { ... }  // Compilation error
+
+// ✅ CORRECT
+result = FHE.select(FHE.gt(a, b), valueA, valueB);
+```
+
+### Mistake 2: Type Mismatch in Select
+
+```solidity
+// ❌ WRONG — different types
+FHE.select(cond, euint32_val, euint64_val);  // ERROR
+
+// ✅ CORRECT — same types
+FHE.select(cond, euint32_a, euint32_b);  // OK
+```
+
+### Mistake 3: Forgetting ACL After Select
+
+```solidity
+// ❌ WRONG
+function update() public {
+    _value = FHE.select(condition, newVal, _value);
+    // Next transaction will fail!
+}
+
+// ✅ CORRECT
+function update() public {
+    _value = FHE.select(condition, newVal, _value);
+    FHE.allowThis(_value);
+}
+```
+
+## Summary
+
+| Concept | Details |
+|---------|---------|
+| **`FHE.select(cond, a, b)`** | Returns `a` if cond is true, `b` if false |
+| **Both branches execute** | Gas = cost of both paths combined |
+| **Types must match** | `a` and `b` must be the same encrypted type |
+| **Nested selects** | Chain for multi-way conditions |
+| **Boolean logic** | Use `FHE.and()`, `FHE.or()`, `FHE.not()` to combine conditions |
+| **Built-in helpers** | `FHE.min()`, `FHE.max()` use select internally |
+
+**Key principle:** In FHE, you never branch — you always compute all paths and **select** the correct result.
+
+<Card title="Next Module" icon="arrow-right" href="/modules/09-randomness">
+  Generate truly unpredictable encrypted random numbers on-chain
+</Card>

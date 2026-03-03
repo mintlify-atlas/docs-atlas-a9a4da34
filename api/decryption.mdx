@@ -1,0 +1,554 @@
+---
+title: Decryption
+description: Complete reference for decrypting FHE values - user decryption and public reveal patterns
+---
+
+## Overview
+
+Decryption in fhEVM comes in two flavors:
+1. **User Decryption** (off-chain): Re-encrypt ciphertext under user's key for private viewing
+2. **Public Decryption** (on-chain): Reveal plaintext value publicly on-chain
+
+This page covers the contract-side patterns. Client-side decryption requires the fhEVM SDK.
+
+## Import
+
+```solidity
+import { FHE, euint32, ebool } from "@fhevm/solidity/lib/FHE.sol";
+```
+
+---
+
+## User Decryption (Off-Chain)
+
+User decryption happens **client-side** using the Relayer SDK, not on-chain. The contract simply returns the encrypted handle after verifying ACL permissions.
+
+### Pattern: Return Encrypted Handle
+
+```solidity
+/// @notice Get encrypted balance for user-specific decryption
+function getMyBalance() external view returns (euint64) {
+    require(
+        FHE.isSenderAllowed(balances[msg.sender]),
+        "No permission to view balance"
+    );
+    return balances[msg.sender];
+}
+```
+
+**Client-Side Decryption** (TypeScript):
+```typescript
+import { createInstance } from '@zama-fhe/fhevm';
+
+// Initialize instance
+const instance = await createInstance({
+  chainId: 8009,
+  networkUrl: 'https://devnet.zama.ai',
+  gatewayUrl: 'https://gateway.zama.ai'
+});
+
+// Get encrypted handle from contract
+const encryptedBalance = await contract.getMyBalance();
+
+// Decrypt using relayer
+const plainBalance = await instance.userDecrypt(
+  contract.address,
+  encryptedBalance
+);
+
+console.log('Balance:', plainBalance);
+```
+
+### Complete Example: User Secret Storage
+
+```solidity
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import { FHE, euint32, externalEuint32 } from "@fhevm/solidity/lib/FHE.sol";
+import { ZamaEthereumConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
+
+contract UserSecrets is ZamaEthereumConfig {
+    mapping(address => euint32) private userSecrets;
+    
+    event SecretStored(address indexed user);
+    event SecretShared(address indexed from, address indexed to);
+    
+    /// @notice Store encrypted secret
+    function storeSecret(
+        externalEuint32 encValue,
+        bytes calldata inputProof
+    ) external {
+        userSecrets[msg.sender] = FHE.fromExternal(encValue, inputProof);
+        FHE.allowThis(userSecrets[msg.sender]);
+        FHE.allow(userSecrets[msg.sender], msg.sender);
+        emit SecretStored(msg.sender);
+    }
+    
+    /// @notice Get own secret (for client-side decryption)
+    function getMySecret() external view returns (euint32) {
+        require(
+            FHE.isSenderAllowed(userSecrets[msg.sender]),
+            "No secret or no access"
+        );
+        return userSecrets[msg.sender];
+    }
+    
+    /// @notice Share secret with another address
+    function shareSecret(address to) external {
+        require(
+            FHE.isInitialized(userSecrets[msg.sender]),
+            "No secret stored"
+        );
+        FHE.allow(userSecrets[msg.sender], to);
+        emit SecretShared(msg.sender, to);
+    }
+    
+    /// @notice Get shared secret (ACL required)
+    function getSharedSecret(address owner) external view returns (euint32) {
+        require(
+            FHE.isSenderAllowed(userSecrets[owner]),
+            "Not authorized"
+        );
+        return userSecrets[owner];
+    }
+    
+    /// @notice Check if caller can access a secret
+    function canAccess(address user) external view returns (bool) {
+        return FHE.isSenderAllowed(userSecrets[user]);
+    }
+}
+```
+
+---
+
+## Public Decryption (On-Chain)
+
+Public decryption reveals the plaintext value on-chain, making it visible to everyone. Use this sparingly and only when necessary.
+
+### FHE.makePubliclyDecryptable()
+
+Mark an encrypted value for public decryption.
+
+<ParamField path="ciphertext" type="euintXX | ebool | eaddress" required>
+  Encrypted value to make publicly decryptable
+</ParamField>
+
+**Signature**:
+```solidity
+function makePubliclyDecryptable(euintXX ciphertext)
+function makePubliclyDecryptable(ebool ciphertext)
+function makePubliclyDecryptable(eaddress ciphertext)
+```
+
+**Example**:
+```solidity
+contract PublicReveal is ZamaEthereumConfig {
+    euint32 private encryptedValue;
+    bool public isPubliclyDecryptable;
+    
+    function setValue(uint32 value) external {
+        encryptedValue = FHE.asEuint32(value);
+        FHE.allowThis(encryptedValue);
+        FHE.allow(encryptedValue, msg.sender);
+        isPubliclyDecryptable = false;
+    }
+    
+    /// @notice Make value publicly decryptable
+    function makePublic() external {
+        require(FHE.isInitialized(encryptedValue), "No value set");
+        FHE.makePubliclyDecryptable(encryptedValue);
+        isPubliclyDecryptable = true;
+    }
+    
+    /// @notice Get encrypted handle for public decryption
+    function getEncryptedValue() external view returns (euint32) {
+        return encryptedValue;
+    }
+}
+```
+
+**Client-Side Public Decryption** (TypeScript):
+```typescript
+// Make value public on-chain
+await contract.makePublic();
+
+// Get encrypted handle
+const encryptedValue = await contract.getEncryptedValue();
+
+// Decrypt using public decryption
+const plainValue = await instance.publicDecrypt(
+  contract.address,
+  encryptedValue
+);
+
+console.log('Public value:', plainValue);
+```
+
+---
+
+### FHE.isPubliclyDecryptable()
+
+Check if a value has been marked for public decryption.
+
+<ParamField path="ciphertext" type="euintXX | ebool | eaddress" required>
+  Encrypted value to check
+</ParamField>
+
+<ParamField path="returns" type="bool">
+  True if publicly decryptable, false otherwise
+</ParamField>
+
+**Signature**:
+```solidity
+function isPubliclyDecryptable(euintXX ciphertext) view returns (bool)
+function isPubliclyDecryptable(ebool ciphertext) view returns (bool)
+function isPubliclyDecryptable(eaddress ciphertext) view returns (bool)
+```
+
+**Example**:
+```solidity
+function canDecryptPublicly() external view returns (bool) {
+    return FHE.isPubliclyDecryptable(encryptedValue);
+}
+```
+
+---
+
+## Decryption Patterns
+
+### Pattern 1: Conditional Public Reveal
+
+```solidity
+contract Auction is ZamaEthereumConfig {
+    euint64 private highestBid;
+    uint256 public endTime;
+    bool public hasEnded;
+    
+    function bid(externalEuint64 encBid, bytes calldata proof) external {
+        require(block.timestamp < endTime, "Auction ended");
+        euint64 bidAmount = FHE.fromExternal(encBid, proof);
+        
+        ebool isHigher = FHE.gt(bidAmount, highestBid);
+        highestBid = FHE.select(isHigher, bidAmount, highestBid);
+        
+        FHE.allowThis(highestBid);
+    }
+    
+    /// @notice End auction and reveal winning bid
+    function endAuction() external {
+        require(block.timestamp >= endTime, "Auction still active");
+        require(!hasEnded, "Already ended");
+        
+        // Make winning bid public
+        FHE.makePubliclyDecryptable(highestBid);
+        hasEnded = true;
+    }
+    
+    function getHighestBid() external view returns (euint64) {
+        return highestBid;
+    }
+}
+```
+
+---
+
+### Pattern 2: Voting Results Reveal
+
+```solidity
+contract ConfidentialVoting is ZamaEthereumConfig {
+    struct Proposal {
+        euint32 yesVotes;
+        euint32 noVotes;
+        uint256 deadline;
+        bool resultsPublic;
+    }
+    
+    mapping(uint256 => Proposal) public proposals;
+    
+    function vote(uint256 proposalId, externalEbool encSupport, bytes calldata proof) 
+        external 
+    {
+        require(block.timestamp < proposals[proposalId].deadline, "Voting ended");
+        
+        ebool support = FHE.fromExternal(encSupport, proof);
+        
+        euint32 yesToAdd = FHE.select(support, FHE.asEuint32(1), FHE.asEuint32(0));
+        euint32 noToAdd = FHE.select(support, FHE.asEuint32(0), FHE.asEuint32(1));
+        
+        proposals[proposalId].yesVotes = FHE.add(
+            proposals[proposalId].yesVotes,
+            yesToAdd
+        );
+        proposals[proposalId].noVotes = FHE.add(
+            proposals[proposalId].noVotes,
+            noToAdd
+        );
+        
+        FHE.allowThis(proposals[proposalId].yesVotes);
+        FHE.allowThis(proposals[proposalId].noVotes);
+    }
+    
+    /// @notice Reveal voting results after deadline
+    function revealResults(uint256 proposalId) external {
+        require(
+            block.timestamp >= proposals[proposalId].deadline,
+            "Voting still active"
+        );
+        require(!proposals[proposalId].resultsPublic, "Already revealed");
+        
+        // Make vote counts public
+        FHE.makePubliclyDecryptable(proposals[proposalId].yesVotes);
+        FHE.makePubliclyDecryptable(proposals[proposalId].noVotes);
+        proposals[proposalId].resultsPublic = true;
+    }
+    
+    function getVoteCounts(uint256 proposalId) 
+        external 
+        view 
+        returns (euint32 yes, euint32 no) 
+    {
+        return (
+            proposals[proposalId].yesVotes,
+            proposals[proposalId].noVotes
+        );
+    }
+}
+```
+
+---
+
+### Pattern 3: Lottery Winner Reveal
+
+```solidity
+contract EncryptedLottery is ZamaEthereumConfig {
+    euint32 private winningTicket;
+    bool public hasDrawn;
+    bool public winnerRevealed;
+    
+    function drawWinner() external {
+        require(!hasDrawn, "Already drawn");
+        
+        // Generate random winning ticket
+        winningTicket = FHE.randEuint32(1000);  // 0-999
+        FHE.allowThis(winningTicket);
+        hasDrawn = true;
+    }
+    
+    /// @notice Reveal winning ticket number
+    function revealWinner() external {
+        require(hasDrawn, "No winner yet");
+        require(!winnerRevealed, "Already revealed");
+        
+        FHE.makePubliclyDecryptable(winningTicket);
+        winnerRevealed = true;
+    }
+    
+    function getWinningTicket() external view returns (euint32) {
+        require(hasDrawn, "No winner yet");
+        return winningTicket;
+    }
+}
+```
+
+---
+
+## Best Practices
+
+### 1. User Decryption: Check ACL
+
+```solidity
+// ❌ WRONG: No ACL check
+function getBalance(address user) external view returns (euint64) {
+    return balances[user];  // Will fail on client-side decryption
+}
+
+// ✅ CORRECT: Verify ACL first
+function getBalance(address user) external view returns (euint64) {
+    require(
+        msg.sender == user || FHE.isSenderAllowed(balances[user]),
+        "No permission"
+    );
+    return balances[user];
+}
+```
+
+### 2. Public Reveal: Guard Access
+
+```solidity
+// ❌ WRONG: Anyone can reveal
+function makePublic() external {
+    FHE.makePubliclyDecryptable(secretValue);
+}
+
+// ✅ CORRECT: Restrict who can reveal
+function makePublic() external {
+    require(msg.sender == owner, "Not owner");
+    require(block.timestamp > revealTime, "Too early");
+    FHE.makePubliclyDecryptable(secretValue);
+}
+```
+
+### 3. Document Decryption Expectations
+
+```solidity
+/// @notice Get encrypted balance
+/// @dev Client must use instance.userDecrypt() to decrypt
+/// @return Encrypted balance handle (requires ACL permission)
+function balanceOf(address account) external view returns (euint64) {
+    return balances[account];
+}
+```
+
+### 4. Avoid Premature Public Reveals
+
+```solidity
+// ❌ WRONG: Reveals during auction
+function bid(euint64 amount) external {
+    FHE.makePubliclyDecryptable(amount);  // Leaks bid!
+}
+
+// ✅ CORRECT: Reveal only after auction ends
+function endAuction() external {
+    require(block.timestamp > endTime, "Auction active");
+    FHE.makePubliclyDecryptable(highestBid);
+}
+```
+
+---
+
+## Complete Example: Sealed-Bid Auction with Reveal
+
+```solidity
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import { FHE, euint64, externalEuint64, ebool, eaddress } from "@fhevm/solidity/lib/FHE.sol";
+import { ZamaEthereumConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
+
+contract RevealableAuction is ZamaEthereumConfig {
+    eaddress private highestBidder;
+    euint64 private highestBid;
+    
+    uint256 public biddingEnd;
+    uint256 public revealEnd;
+    
+    bool public biddingEnded;
+    bool public resultsRevealed;
+    
+    mapping(address => euint64) private bids;
+    
+    event BidPlaced(address indexed bidder);
+    event AuctionEnded();
+    event ResultsRevealed();
+    
+    constructor(uint256 biddingDuration, uint256 revealDelay) {
+        biddingEnd = block.timestamp + biddingDuration;
+        revealEnd = biddingEnd + revealDelay;
+        highestBid = FHE.asEuint64(0);
+        highestBidder = FHE.asEaddress(address(0));
+    }
+    
+    /// @notice Submit sealed bid
+    function bid(externalEuint64 encBid, bytes calldata proof) external {
+        require(block.timestamp < biddingEnd, "Bidding ended");
+        
+        euint64 bidAmount = FHE.fromExternal(encBid, proof);
+        bids[msg.sender] = bidAmount;
+        
+        // Update highest bid
+        ebool isHigher = FHE.gt(bidAmount, highestBid);
+        highestBid = FHE.select(isHigher, bidAmount, highestBid);
+        highestBidder = FHE.select(
+            isHigher,
+            FHE.asEaddress(msg.sender),
+            highestBidder
+        );
+        
+        FHE.allowThis(bids[msg.sender]);
+        FHE.allow(bids[msg.sender], msg.sender);
+        FHE.allowThis(highestBid);
+        FHE.allowThis(highestBidder);
+        
+        emit BidPlaced(msg.sender);
+    }
+    
+    /// @notice End bidding period
+    function endAuction() external {
+        require(block.timestamp >= biddingEnd, "Bidding still active");
+        require(!biddingEnded, "Already ended");
+        
+        biddingEnded = true;
+        emit AuctionEnded();
+    }
+    
+    /// @notice Reveal auction results
+    function revealResults() external {
+        require(biddingEnded, "Auction not ended");
+        require(block.timestamp >= revealEnd, "Reveal period not started");
+        require(!resultsRevealed, "Already revealed");
+        
+        // Make results publicly decryptable
+        FHE.makePubliclyDecryptable(highestBid);
+        FHE.makePubliclyDecryptable(highestBidder);
+        resultsRevealed = true;
+        
+        emit ResultsRevealed();
+    }
+    
+    /// @notice Get encrypted highest bid
+    function getHighestBid() external view returns (euint64) {
+        return highestBid;
+    }
+    
+    /// @notice Get encrypted highest bidder
+    function getHighestBidder() external view returns (eaddress) {
+        return highestBidder;
+    }
+    
+    /// @notice Get own bid (user decryption)
+    function getMyBid() external view returns (euint64) {
+        require(
+            FHE.isSenderAllowed(bids[msg.sender]),
+            "No bid or no access"
+        );
+        return bids[msg.sender];
+    }
+}
+```
+
+---
+
+## Migration Notes
+
+<Warning>
+  **fhEVM v0.9+**: Use `FHE.makePubliclyDecryptable()` instead of the deprecated `Gateway.requestDecryption()` pattern.
+</Warning>
+
+<Info>
+  **No sealoutput()**: The `FHE.sealoutput()` function does not exist. Use client-side `instance.userDecrypt()` for user-specific decryption.
+</Info>
+
+---
+
+## Important Notes
+
+<Warning>
+  **Privacy Loss**: Public decryption permanently reveals the plaintext value. Use sparingly and only when necessary.
+</Warning>
+
+<Info>
+  **ACL Required**: User decryption requires the user to have ACL permission on the ciphertext. Always set `FHE.allow(value, user)`.
+</Info>
+
+<Tip>
+  **Delayed Reveal**: Use time-locks or conditions to prevent premature public reveals (e.g., auction results, voting tallies).
+</Tip>
+
+---
+
+## Related
+
+- [ACL Documentation](/api/acl) - Managing access permissions
+- [Randomness](/api/randomness) - Generating encrypted random values for lotteries
+- [Conditional Logic](/api/conditional) - Building reveal conditions

@@ -1,0 +1,525 @@
+---
+title: Conditional Operations
+description: Complete reference for FHE conditional logic using FHE.select() for branch-free programming
+---
+
+## Overview
+
+In FHE contracts, you cannot use traditional `if/else` statements on encrypted values because the condition itself is encrypted. Instead, use `FHE.select()` - the encrypted ternary operator that evaluates both branches and selects the result based on an encrypted boolean condition.
+
+## Import
+
+```solidity
+import { FHE, euint32, ebool } from "@fhevm/solidity/lib/FHE.sol";
+```
+
+<Warning>
+  **CRITICAL**: Never use `if (encryptedCondition)` or `require(encryptedCondition)`. These will not compile. All conditional logic on encrypted values must use `FHE.select()`.
+</Warning>
+
+---
+
+## Select (Encrypted Ternary)
+
+### FHE.select()
+
+Select between two values based on an encrypted condition. This is the fundamental building block for all conditional logic in FHE contracts.
+
+<ParamField path="condition" type="ebool" required>
+  Encrypted boolean condition
+</ParamField>
+
+<ParamField path="valueIfTrue" type="euintXX | ebool | eaddress" required>
+  Value to return if condition is true (encrypted)
+</ParamField>
+
+<ParamField path="valueIfFalse" type="euintXX | ebool | eaddress" required>
+  Value to return if condition is false (encrypted, same type as valueIfTrue)
+</ParamField>
+
+<ParamField path="returns" type="euintXX | ebool | eaddress">
+  Encrypted result: valueIfTrue if condition is true, valueIfFalse otherwise
+</ParamField>
+
+**Signature**:
+```solidity
+function select(ebool condition, euintXX valueIfTrue, euintXX valueIfFalse) returns (euintXX)
+function select(ebool condition, ebool valueIfTrue, ebool valueIfFalse) returns (ebool)
+function select(ebool condition, eaddress valueIfTrue, eaddress valueIfFalse) returns (eaddress)
+```
+
+**Basic Example**:
+```solidity
+contract ConditionalDemo is ZamaEthereumConfig {
+    function selectDemo(uint32 a, uint32 b, bool condition) external returns (euint32) {
+        euint32 encA = FHE.asEuint32(a);
+        euint32 encB = FHE.asEuint32(b);
+        ebool encCondition = FHE.asEbool(condition);
+        
+        // If condition then a, else b
+        euint32 result = FHE.select(encCondition, encA, encB);
+        
+        FHE.allowThis(result);
+        FHE.allow(result, msg.sender);
+        return result;
+    }
+}
+```
+
+**Gas Cost** (approximate):
+- `euint8`: ~70k gas
+- `euint32`: ~160k gas
+- `euint64`: ~230k gas
+- `euint256`: ~560k gas
+- `ebool`: ~70k gas
+
+<Info>
+  `FHE.select()` is **branch-free**: both branches are always evaluated, then the result is selected. This prevents timing attacks and information leakage.
+</Info>
+
+---
+
+## Basic Patterns
+
+### Pattern 1: Conditional Update
+
+```solidity
+// Update value only if condition is true, otherwise keep old value
+function conditionalUpdate(euint32 value, euint32 newValue, ebool condition) 
+    internal 
+    returns (euint32) 
+{
+    euint32 result = FHE.select(condition, newValue, value);
+    FHE.allowThis(result);
+    return result;
+}
+```
+
+**Example - Transfer Only if Sufficient Balance**:
+```solidity
+function transfer(address to, euint64 amount) external {
+    ebool hasBalance = FHE.ge(balances[msg.sender], amount);
+    
+    // Transfer amount if sufficient, otherwise transfer 0
+    euint64 actualAmount = FHE.select(hasBalance, amount, FHE.asEuint64(0));
+    
+    balances[msg.sender] = FHE.sub(balances[msg.sender], actualAmount);
+    balances[to] = FHE.add(balances[to], actualAmount);
+    
+    FHE.allowThis(balances[msg.sender]);
+    FHE.allow(balances[msg.sender], msg.sender);
+    FHE.allowThis(balances[to]);
+    FHE.allow(balances[to], to);
+}
+```
+
+---
+
+### Pattern 2: Clamping Values
+
+```solidity
+// Clamp value between min and max
+function clampValue(uint32 value, uint32 minVal, uint32 maxVal) 
+    external 
+    returns (euint32) 
+{
+    euint32 encValue = FHE.asEuint32(value);
+    euint32 encMin = FHE.asEuint32(minVal);
+    euint32 encMax = FHE.asEuint32(maxVal);
+    
+    // If value > max, use max
+    ebool isAboveMax = FHE.gt(encValue, encMax);
+    euint32 clamped = FHE.select(isAboveMax, encMax, encValue);
+    
+    // If clamped < min, use min
+    ebool isBelowMin = FHE.lt(clamped, encMin);
+    euint32 result = FHE.select(isBelowMin, encMin, clamped);
+    
+    FHE.allowThis(result);
+    FHE.allow(result, msg.sender);
+    return result;
+}
+```
+
+**Alternative - Using FHE.min/max**:
+```solidity
+function clampBuiltin(uint32 value, uint32 minVal, uint32 maxVal) 
+    external 
+    returns (euint32) 
+{
+    euint32 encVal = FHE.asEuint32(value);
+    euint32 encMin = FHE.asEuint32(minVal);
+    euint32 encMax = FHE.asEuint32(maxVal);
+    
+    euint32 raised = FHE.max(encVal, encMin);  // Ensure >= min
+    euint32 result = FHE.min(raised, encMax);  // Ensure <= max
+    
+    FHE.allowThis(result);
+    FHE.allow(result, msg.sender);
+    return result;
+}
+```
+
+---
+
+### Pattern 3: Safe Subtraction
+
+```solidity
+// Subtract only if a >= b, otherwise return 0
+function safeSub(euint32 a, euint32 b) public returns (euint32) {
+    ebool canSub = FHE.ge(a, b);
+    euint32 diff = FHE.sub(a, b);
+    euint32 result = FHE.select(canSub, diff, FHE.asEuint32(0));
+    
+    FHE.allowThis(result);
+    FHE.allow(result, msg.sender);
+    return result;
+}
+```
+
+---
+
+### Pattern 4: Multi-Way Selection (Nested Select)
+
+```solidity
+// Encrypted equivalent of: if (a) x; else if (b) y; else z;
+function multiWaySelect(
+    ebool condA,
+    ebool condB,
+    euint32 x,
+    euint32 y,
+    euint32 z
+) internal returns (euint32) {
+    euint32 result = FHE.select(
+        condA,
+        x,
+        FHE.select(condB, y, z)  // Nested select for else-if
+    );
+    
+    FHE.allowThis(result);
+    return result;
+}
+```
+
+**Example - Tiered Pricing**:
+```solidity
+// Price depends on quantity: >100 = $5, >50 = $7, else $10
+function calculatePrice(euint32 quantity) internal returns (euint32) {
+    ebool isLarge = FHE.gt(quantity, 100);
+    ebool isMedium = FHE.gt(quantity, 50);
+    
+    euint32 price = FHE.select(
+        isLarge,
+        FHE.asEuint32(5),
+        FHE.select(
+            isMedium,
+            FHE.asEuint32(7),
+            FHE.asEuint32(10)
+        )
+    );
+    
+    FHE.allowThis(price);
+    return price;
+}
+```
+
+---
+
+## Advanced Patterns
+
+### Pattern 5: Conditional Increment
+
+```solidity
+// Increment counter only if condition is true
+function conditionalIncrement(euint32 counter, ebool condition) 
+    internal 
+    returns (euint32) 
+{
+    euint32 increment = FHE.select(condition, FHE.asEuint32(1), FHE.asEuint32(0));
+    euint32 newCounter = FHE.add(counter, increment);
+    FHE.allowThis(newCounter);
+    return newCounter;
+}
+
+// Example: Count votes only if eligible
+function vote(uint256 proposalId, bool support) external {
+    ebool isEligible = eligibleVoters[msg.sender];
+    ebool hasNotVoted = FHE.not(hasVoted[proposalId][msg.sender]);
+    ebool canVote = FHE.and(isEligible, hasNotVoted);
+    
+    // Increment yes or no counter based on support and eligibility
+    euint32 yesToAdd = FHE.select(
+        FHE.and(canVote, FHE.asEbool(support)),
+        FHE.asEuint32(1),
+        FHE.asEuint32(0)
+    );
+    
+    euint32 noToAdd = FHE.select(
+        FHE.and(canVote, FHE.not(FHE.asEbool(support))),
+        FHE.asEuint32(1),
+        FHE.asEuint32(0)
+    );
+    
+    proposals[proposalId].yesVotes = FHE.add(proposals[proposalId].yesVotes, yesToAdd);
+    proposals[proposalId].noVotes = FHE.add(proposals[proposalId].noVotes, noToAdd);
+}
+```
+
+---
+
+### Pattern 6: Conditional Swap
+
+```solidity
+// Swap two values if condition is true
+function conditionalSwap(euint32 a, euint32 b, ebool shouldSwap) 
+    internal 
+    returns (euint32, euint32) 
+{
+    euint32 newA = FHE.select(shouldSwap, b, a);
+    euint32 newB = FHE.select(shouldSwap, a, b);
+    
+    FHE.allowThis(newA);
+    FHE.allowThis(newB);
+    return (newA, newB);
+}
+
+// Example: Sort two values (ascending)
+function sortTwo(euint32 a, euint32 b) internal returns (euint32, euint32) {
+    ebool needsSwap = FHE.gt(a, b);  // a > b means swap needed
+    return conditionalSwap(a, b, needsSwap);
+}
+```
+
+---
+
+### Pattern 7: Selecting Between Addresses
+
+```solidity
+// Update highest bidder in auction
+function updateHighestBidder(
+    eaddress currentHighest,
+    euint64 currentBid,
+    euint64 newBid
+) internal returns (eaddress) {
+    ebool isHigher = FHE.gt(newBid, currentBid);
+    
+    eaddress newHighest = FHE.select(
+        isHigher,
+        FHE.asEaddress(msg.sender),
+        currentHighest
+    );
+    
+    FHE.allowThis(newHighest);
+    return newHighest;
+}
+```
+
+---
+
+## Complete Example: Sealed-Bid Auction
+
+```solidity
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import { FHE, euint64, externalEuint64, ebool, eaddress } from "@fhevm/solidity/lib/FHE.sol";
+import { ZamaEthereumConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
+
+contract SealedBidAuction is ZamaEthereumConfig {
+    eaddress private highestBidder;
+    euint64 private highestBid;
+    uint256 public endTime;
+    address public seller;
+    
+    mapping(address => euint64) private deposits;
+    
+    constructor(uint256 duration) {
+        seller = msg.sender;
+        endTime = block.timestamp + duration;
+        highestBid = FHE.asEuint64(0);
+        highestBidder = FHE.asEaddress(address(0));
+    }
+    
+    /// @notice Submit encrypted bid
+    function bid(externalEuint64 encBid, bytes calldata proof) external payable {
+        require(block.timestamp < endTime, "Auction ended");
+        
+        euint64 bidAmount = FHE.fromExternal(encBid, proof);
+        deposits[msg.sender] = FHE.add(deposits[msg.sender], bidAmount);
+        
+        // Check if this bid is higher than current highest
+        ebool isHigher = FHE.gt(bidAmount, highestBid);
+        
+        // Update highest bid if new bid is higher (branch-free)
+        highestBid = FHE.select(isHigher, bidAmount, highestBid);
+        
+        // Update highest bidder if new bid is higher
+        highestBidder = FHE.select(
+            isHigher,
+            FHE.asEaddress(msg.sender),
+            highestBidder
+        );
+        
+        // Set ACL
+        FHE.allowThis(deposits[msg.sender]);
+        FHE.allow(deposits[msg.sender], msg.sender);
+        FHE.allowThis(highestBid);
+        FHE.allowThis(highestBidder);
+    }
+    
+    /// @notice Get encrypted highest bid
+    function getHighestBid() external view returns (euint64) {
+        return highestBid;
+    }
+    
+    /// @notice Get encrypted highest bidder
+    function getHighestBidder() external view returns (eaddress) {
+        return highestBidder;
+    }
+}
+```
+
+---
+
+## Complex Example: Confidential Lending
+
+```solidity
+function borrow(externalEuint64 encAmount, bytes calldata proof) external {
+    euint64 amount = FHE.fromExternal(encAmount, proof);
+    euint64 userCollateral = collateral[msg.sender];
+    
+    // Calculate maximum borrowable (70% of collateral)
+    euint64 maxBorrow = FHE.div(FHE.mul(userCollateral, 70), 100);
+    
+    // Check if amount <= maxBorrow
+    ebool canBorrow = FHE.le(amount, maxBorrow);
+    
+    // Check if pool has sufficient liquidity
+    ebool hasLiquidity = FHE.ge(poolBalance, amount);
+    
+    // Both conditions must be true
+    ebool approved = FHE.and(canBorrow, hasLiquidity);
+    
+    // Borrow amount if approved, otherwise 0
+    euint64 actualAmount = FHE.select(approved, amount, FHE.asEuint64(0));
+    
+    // Update balances
+    borrowed[msg.sender] = FHE.add(borrowed[msg.sender], actualAmount);
+    poolBalance = FHE.sub(poolBalance, actualAmount);
+    
+    FHE.allowThis(borrowed[msg.sender]);
+    FHE.allow(borrowed[msg.sender], msg.sender);
+    FHE.allowThis(poolBalance);
+}
+```
+
+---
+
+## Common Mistakes
+
+### Mistake 1: Using `if` on Encrypted Values
+
+```solidity
+// ❌ WRONG: Cannot use if with encrypted boolean
+ebool condition = FHE.gt(a, b);
+if (condition) {  // Compilation error!
+    // ...
+}
+
+// ✅ CORRECT: Use FHE.select
+ebool condition = FHE.gt(a, b);
+euint32 result = FHE.select(condition, valueIfTrue, valueIfFalse);
+```
+
+---
+
+### Mistake 2: Using `require` with Encrypted Conditions
+
+```solidity
+// ❌ WRONG: Reveals information through revert
+require(FHE.ge(balance, amount), "Insufficient balance");
+
+// ✅ CORRECT: Silent failure using select
+ebool hasBalance = FHE.ge(balance, amount);
+euint64 actualAmount = FHE.select(hasBalance, amount, FHE.asEuint64(0));
+```
+
+---
+
+### Mistake 3: Not Setting ACL After Select
+
+```solidity
+// ❌ WRONG: Missing ACL
+euint32 result = FHE.select(condition, a, b);
+return result;  // Contract can't use this in future transactions!
+
+// ✅ CORRECT: Always set ACL
+euint32 result = FHE.select(condition, a, b);
+FHE.allowThis(result);
+FHE.allow(result, msg.sender);
+return result;
+```
+
+---
+
+## Gas Optimization Tips
+
+### 1. Minimize Select Operations
+
+```solidity
+// ❌ Multiple selects
+euint64 a = FHE.select(cond, x, y);
+euint64 b = FHE.select(cond, m, n);
+
+// ✅ Combine logic if possible
+euint64 sum = FHE.select(cond, FHE.add(x, m), FHE.add(y, n));
+```
+
+### 2. Cache Conditions
+
+```solidity
+// ❌ Recomputes condition
+euint64 r1 = FHE.select(FHE.gt(a, b), x, y);
+euint64 r2 = FHE.select(FHE.gt(a, b), m, n);
+
+// ✅ Compute once
+ebool isGreater = FHE.gt(a, b);
+euint64 r1 = FHE.select(isGreater, x, y);
+euint64 r2 = FHE.select(isGreater, m, n);
+```
+
+### 3. Use min/max for Simple Cases
+
+```solidity
+// ❌ Verbose
+ebool isLess = FHE.lt(a, b);
+euint32 minimum = FHE.select(isLess, a, b);
+
+// ✅ Cleaner and same gas
+euint32 minimum = FHE.min(a, b);
+```
+
+---
+
+## Important Notes
+
+<Warning>
+  **Branch-Free Execution**: `FHE.select()` evaluates BOTH branches before selecting the result. This prevents timing attacks but means expensive operations in both branches will always execute.
+</Warning>
+
+<Info>
+  **Silent Failures**: Use `FHE.select()` to implement silent failures (transfer 0 instead of reverting) to prevent information leakage through transaction success/failure.
+</Info>
+
+<Tip>
+  **Nested Selects**: You can nest `FHE.select()` calls for multi-way branching, but each level adds ~160k gas. Consider alternative designs for deeply nested logic.
+</Tip>
+
+---
+
+## Related
+
+- [Comparison Operations](/api/comparison) - Create conditions for select
+- [Arithmetic Operations](/api/arithmetic) - FHE.min/max as alternatives
+- [ACL Documentation](/api/acl) - Set permissions after select
+- [Gas Costs](/api/gas-costs) - Optimization strategies

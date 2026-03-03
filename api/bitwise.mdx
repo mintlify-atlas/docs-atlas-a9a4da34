@@ -1,0 +1,640 @@
+---
+title: Bitwise Operations
+description: Complete reference for FHE bitwise operations (and, or, xor, not, shl, shr, rotl, rotr)
+---
+
+## Overview
+
+The FHE library provides bitwise operations on encrypted integers and booleans. These operations work at the bit level while preserving encryption.
+
+## Import
+
+```solidity
+import { FHE, euint32, ebool } from "@fhevm/solidity/lib/FHE.sol";
+```
+
+---
+
+## Bitwise AND
+
+### FHE.and()
+
+Perform bitwise AND on two encrypted values.
+
+<ParamField path="a" type="euintXX | ebool" required>
+  First operand (encrypted)
+</ParamField>
+
+<ParamField path="b" type="euintXX | ebool" required>
+  Second operand (encrypted, same type as first)
+</ParamField>
+
+<ParamField path="returns" type="euintXX | ebool">
+  Encrypted result of bitwise AND
+</ParamField>
+
+**Signature**:
+```solidity
+function and(euintXX a, euintXX b) returns (euintXX)
+function and(ebool a, ebool b) returns (ebool)
+```
+
+**Example (Integer)**:
+```solidity
+contract BitwiseDemo is ZamaEthereumConfig {
+    function andOperation(uint32 a, uint32 b) external returns (euint32) {
+        euint32 encA = FHE.asEuint32(a);
+        euint32 encB = FHE.asEuint32(b);
+        euint32 result = FHE.and(encA, encB);
+        
+        FHE.allowThis(result);
+        FHE.allow(result, msg.sender);
+        return result;
+    }
+}
+```
+
+**Example (Boolean - Logical AND)**:
+```solidity
+function checkEligibility(address user) internal returns (ebool) {
+    ebool hasBalance = FHE.gt(balances[user], FHE.asEuint64(1000));
+    ebool isVerified = verifiedUsers[user];
+    
+    // Both conditions must be true
+    ebool eligible = FHE.and(hasBalance, isVerified);
+    return eligible;
+}
+```
+
+**Behavior**:
+- Bitwise: `0b1100 & 0b1010 = 0b1000`
+- Boolean: `true AND false = false`
+
+**Gas Cost** (approximate):
+- `euint8`: ~60k gas
+- `euint32`: ~140k gas
+- `euint64`: ~200k gas
+- `ebool`: ~60k gas
+
+---
+
+## Bitwise OR
+
+### FHE.or()
+
+Perform bitwise OR on two encrypted values.
+
+<ParamField path="a" type="euintXX | ebool" required>
+  First operand (encrypted)
+</ParamField>
+
+<ParamField path="b" type="euintXX | ebool" required>
+  Second operand (encrypted, same type as first)
+</ParamField>
+
+<ParamField path="returns" type="euintXX | ebool">
+  Encrypted result of bitwise OR
+</ParamField>
+
+**Signature**:
+```solidity
+function or(euintXX a, euintXX b) returns (euintXX)
+function or(ebool a, ebool b) returns (ebool)
+```
+
+**Example**:
+```solidity
+function orOperation(uint32 a, uint32 b) external returns (euint32) {
+    euint32 result = FHE.or(FHE.asEuint32(a), FHE.asEuint32(b));
+    FHE.allowThis(result);
+    FHE.allow(result, msg.sender);
+    return result;
+}
+```
+
+**Example (Boolean - Logical OR)**:
+```solidity
+function canAccess(address user) internal returns (ebool) {
+    ebool isOwner = FHE.eq(FHE.asEaddress(user), FHE.asEaddress(owner));
+    ebool isWhitelisted = whitelist[user];
+    
+    // Either condition can be true
+    return FHE.or(isOwner, isWhitelisted);
+}
+```
+
+**Behavior**:
+- Bitwise: `0b1100 | 0b1010 = 0b1110`
+- Boolean: `true OR false = true`
+
+**Gas Cost**: Same as `FHE.and()`
+
+---
+
+## Bitwise XOR
+
+### FHE.xor()
+
+Perform bitwise XOR (exclusive OR) on two encrypted values.
+
+<ParamField path="a" type="euintXX | ebool" required>
+  First operand (encrypted)
+</ParamField>
+
+<ParamField path="b" type="euintXX | ebool" required>
+  Second operand (encrypted, same type as first)
+</ParamField>
+
+<ParamField path="returns" type="euintXX | ebool">
+  Encrypted result of bitwise XOR
+</ParamField>
+
+**Signature**:
+```solidity
+function xor(euintXX a, euintXX b) returns (euintXX)
+function xor(ebool a, ebool b) returns (ebool)
+```
+
+**Example**:
+```solidity
+function xorOperation(uint32 a, uint32 b) external returns (euint32) {
+    euint32 result = FHE.xor(FHE.asEuint32(a), FHE.asEuint32(b));
+    FHE.allowThis(result);
+    FHE.allow(result, msg.sender);
+    return result;
+}
+```
+
+**Use Case - Toggle Bits**:
+```solidity
+// Toggle specific bits using XOR with a mask
+function toggleBits(euint32 value, uint32 mask) internal returns (euint32) {
+    euint32 toggled = FHE.xor(value, mask);
+    FHE.allowThis(toggled);
+    return toggled;
+}
+```
+
+**Behavior**:
+- Bitwise: `0b1100 ^ 0b1010 = 0b0110`
+- Boolean: `true XOR true = false`, `true XOR false = true`
+
+**Gas Cost**: Same as `FHE.and()`
+
+---
+
+## Bitwise NOT
+
+### FHE.not()
+
+Perform bitwise NOT (invert all bits) on an encrypted value.
+
+<ParamField path="a" type="euintXX | ebool" required>
+  Value to invert (encrypted)
+</ParamField>
+
+<ParamField path="returns" type="euintXX | ebool">
+  Encrypted result with all bits inverted
+</ParamField>
+
+**Signature**:
+```solidity
+function not(euintXX a) returns (euintXX)
+function not(ebool a) returns (ebool)
+```
+
+**Example**:
+```solidity
+function notOperation(uint32 a) external returns (euint32) {
+    euint32 result = FHE.not(FHE.asEuint32(a));
+    FHE.allowThis(result);
+    FHE.allow(result, msg.sender);
+    return result;
+}
+```
+
+**Example (Boolean - Logical NOT)**:
+```solidity
+function invertCondition(ebool condition) internal returns (ebool) {
+    ebool inverted = FHE.not(condition);
+    FHE.allowThis(inverted);
+    return inverted;
+}
+
+// Check if user has NOT voted
+function hasNotVoted(address user) external view returns (ebool) {
+    return FHE.not(hasVoted[user]);
+}
+```
+
+**Behavior**:
+- `FHE.not(euint8(0b11001100))` = `0b00110011`
+- `FHE.not(ebool(true))` = `false`
+
+**Gas Cost** (approximate):
+- `euint8`: ~50k gas
+- `euint32`: ~120k gas
+- `euint64`: ~170k gas
+- `ebool`: ~50k gas
+
+---
+
+## Shift Left
+
+### FHE.shl()
+
+Shift bits left (multiply by power of 2).
+
+<ParamField path="a" type="euintXX" required>
+  Value to shift (encrypted)
+</ParamField>
+
+<ParamField path="b" type="euintXX | uintXX" required>
+  Number of positions to shift (encrypted or plaintext)
+</ParamField>
+
+<ParamField path="returns" type="euintXX">
+  Encrypted result of left shift
+</ParamField>
+
+**Signature**:
+```solidity
+function shl(euintXX a, euintXX b) returns (euintXX)
+function shl(euintXX a, uintXX b) returns (euintXX)
+```
+
+**Example**:
+```solidity
+function shiftLeft(uint32 value, uint8 positions) external returns (euint32) {
+    euint32 encValue = FHE.asEuint32(value);
+    euint8 encPositions = FHE.asEuint8(positions);
+    euint32 result = FHE.shl(encValue, encPositions);
+    
+    FHE.allowThis(result);
+    FHE.allow(result, msg.sender);
+    return result;
+}
+```
+
+**Use Case - Multiply by Power of 2**:
+```solidity
+// Multiply by 8 (2^3) using left shift
+function multiplyBy8(euint32 value) internal returns (euint32) {
+    euint32 result = FHE.shl(value, 3);  // value << 3 = value * 8
+    FHE.allowThis(result);
+    return result;
+}
+```
+
+**Behavior**:
+- `5 << 2 = 20` (binary: `0b0101 << 2 = 0b10100`)
+- Bits shifted out on the left are lost
+- Zeros fill from the right
+
+**Gas Cost** (approximate):
+- `euint8`: ~90k gas
+- `euint32`: ~220k gas
+- `euint64`: ~350k gas
+
+---
+
+## Shift Right
+
+### FHE.shr()
+
+Shift bits right (divide by power of 2).
+
+<ParamField path="a" type="euintXX" required>
+  Value to shift (encrypted)
+</ParamField>
+
+<ParamField path="b" type="euintXX | uintXX" required>
+  Number of positions to shift (encrypted or plaintext)
+</ParamField>
+
+<ParamField path="returns" type="euintXX">
+  Encrypted result of right shift
+</ParamField>
+
+**Signature**:
+```solidity
+function shr(euintXX a, euintXX b) returns (euintXX)
+function shr(euintXX a, uintXX b) returns (euintXX)
+```
+
+**Example**:
+```solidity
+function shiftRight(uint32 value, uint8 positions) external returns (euint32) {
+    euint32 result = FHE.shr(FHE.asEuint32(value), FHE.asEuint8(positions));
+    FHE.allowThis(result);
+    FHE.allow(result, msg.sender);
+    return result;
+}
+```
+
+**Use Case - Divide by Power of 2**:
+```solidity
+// Divide by 4 (2^2) using right shift
+function divideBy4(euint32 value) internal returns (euint32) {
+    euint32 result = FHE.shr(value, 2);  // value >> 2 = value / 4
+    FHE.allowThis(result);
+    return result;
+}
+```
+
+**Behavior**:
+- `20 >> 2 = 5` (binary: `0b10100 >> 2 = 0b00101`)
+- Bits shifted out on the right are lost (truncated)
+- Zeros fill from the left
+
+**Gas Cost**: Same as `FHE.shl()`
+
+<Info>
+  Right shift is equivalent to integer division by 2^n, but much cheaper than `FHE.div()` for powers of 2.
+</Info>
+
+---
+
+## Rotate Left
+
+### FHE.rotl()
+
+Rotate bits left (circular shift).
+
+<ParamField path="a" type="euintXX" required>
+  Value to rotate (encrypted)
+</ParamField>
+
+<ParamField path="b" type="euintXX | uintXX" required>
+  Number of positions to rotate (encrypted or plaintext)
+</ParamField>
+
+<ParamField path="returns" type="euintXX">
+  Encrypted result of left rotation
+</ParamField>
+
+**Signature**:
+```solidity
+function rotl(euintXX a, euintXX b) returns (euintXX)
+function rotl(euintXX a, uintXX b) returns (euintXX)
+```
+
+**Example**:
+```solidity
+function rotateLeft(uint32 value, uint8 positions) external returns (euint32) {
+    euint32 result = FHE.rotl(FHE.asEuint32(value), FHE.asEuint8(positions));
+    FHE.allowThis(result);
+    FHE.allow(result, msg.sender);
+    return result;
+}
+```
+
+**Behavior**:
+- `0b11001010 rotl 2 = 0b00101011` (for euint8)
+- Bits shifted out on the left wrap around to the right
+- No bits are lost
+
+**Use Case - Cryptographic Mixing**:
+```solidity
+// Simple hash mixing function
+function mixBits(euint32 value) internal returns (euint32) {
+    euint32 rotated = FHE.rotl(value, 13);
+    euint32 mixed = FHE.xor(value, rotated);
+    FHE.allowThis(mixed);
+    return mixed;
+}
+```
+
+**Gas Cost**: Same as `FHE.shl()`
+
+---
+
+## Rotate Right
+
+### FHE.rotr()
+
+Rotate bits right (circular shift).
+
+<ParamField path="a" type="euintXX" required>
+  Value to rotate (encrypted)
+</ParamField>
+
+<ParamField path="b" type="euintXX | uintXX" required>
+  Number of positions to rotate (encrypted or plaintext)
+</ParamField>
+
+<ParamField path="returns" type="euintXX">
+  Encrypted result of right rotation
+</ParamField>
+
+**Signature**:
+```solidity
+function rotr(euintXX a, euintXX b) returns (euintXX)
+function rotr(euintXX a, uintXX b) returns (euintXX)
+```
+
+**Example**:
+```solidity
+function rotateRight(uint32 value, uint8 positions) external returns (euint32) {
+    euint32 result = FHE.rotr(FHE.asEuint32(value), FHE.asEuint8(positions));
+    FHE.allowThis(result);
+    FHE.allow(result, msg.sender);
+    return result;
+}
+```
+
+**Behavior**:
+- `0b11001010 rotr 2 = 0b10110010` (for euint8)
+- Bits shifted out on the right wrap around to the left
+- No bits are lost
+
+**Gas Cost**: Same as `FHE.shl()`
+
+---
+
+## Complete Example: Bit Manipulation Toolkit
+
+```solidity
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import { FHE, euint32, ebool } from "@fhevm/solidity/lib/FHE.sol";
+import { ZamaEthereumConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
+
+contract BitManipulation is ZamaEthereumConfig {
+    /// @notice Check if a specific bit is set
+    function isBitSet(euint32 value, uint8 bitPosition) public returns (ebool) {
+        euint32 mask = FHE.asEuint32(1 << bitPosition);
+        euint32 masked = FHE.and(value, mask);
+        ebool isSet = FHE.ne(masked, FHE.asEuint32(0));
+        
+        FHE.allowThis(isSet);
+        FHE.allow(isSet, msg.sender);
+        return isSet;
+    }
+    
+    /// @notice Set a specific bit to 1
+    function setBit(euint32 value, uint8 bitPosition) public returns (euint32) {
+        euint32 mask = FHE.asEuint32(1 << bitPosition);
+        euint32 result = FHE.or(value, mask);
+        
+        FHE.allowThis(result);
+        FHE.allow(result, msg.sender);
+        return result;
+    }
+    
+    /// @notice Clear a specific bit to 0
+    function clearBit(euint32 value, uint8 bitPosition) public returns (euint32) {
+        euint32 mask = FHE.asEuint32(~(1 << bitPosition));
+        euint32 result = FHE.and(value, mask);
+        
+        FHE.allowThis(result);
+        FHE.allow(result, msg.sender);
+        return result;
+    }
+    
+    /// @notice Toggle a specific bit
+    function toggleBit(euint32 value, uint8 bitPosition) public returns (euint32) {
+        euint32 mask = FHE.asEuint32(1 << bitPosition);
+        euint32 result = FHE.xor(value, mask);
+        
+        FHE.allowThis(result);
+        FHE.allow(result, msg.sender);
+        return result;
+    }
+    
+    /// @notice Extract a range of bits
+    function extractBits(euint32 value, uint8 start, uint8 length) 
+        public 
+        returns (euint32) 
+    {
+        uint32 mask = ((1 << length) - 1) << start;
+        euint32 masked = FHE.and(value, FHE.asEuint32(mask));
+        euint32 result = FHE.shr(masked, start);
+        
+        FHE.allowThis(result);
+        FHE.allow(result, msg.sender);
+        return result;
+    }
+    
+    /// @notice Count trailing zeros (approximate - for demo)
+    function powerOfTwo(euint32 value) public returns (ebool) {
+        // Check if value & (value - 1) == 0
+        euint32 valueMinus1 = FHE.sub(value, 1);
+        euint32 anded = FHE.and(value, valueMinus1);
+        ebool isPowerOfTwo = FHE.eq(anded, FHE.asEuint32(0));
+        
+        FHE.allowThis(isPowerOfTwo);
+        FHE.allow(isPowerOfTwo, msg.sender);
+        return isPowerOfTwo;
+    }
+}
+```
+
+---
+
+## Use Cases
+
+### 1. Permissions and Flags
+
+```solidity
+// Store multiple boolean flags in a single euint32
+euint32 userPermissions;
+
+// Bit positions
+uint8 constant CAN_READ = 0;
+uint8 constant CAN_WRITE = 1;
+uint8 constant CAN_DELETE = 2;
+
+function grantPermission(euint32 permissions, uint8 flag) internal returns (euint32) {
+    euint32 mask = FHE.asEuint32(1 << flag);
+    return FHE.or(permissions, mask);
+}
+
+function hasPermission(euint32 permissions, uint8 flag) internal returns (ebool) {
+    euint32 mask = FHE.asEuint32(1 << flag);
+    euint32 result = FHE.and(permissions, mask);
+    return FHE.ne(result, FHE.asEuint32(0));
+}
+```
+
+### 2. Efficient Multiplication/Division by Powers of 2
+
+```solidity
+// Multiply by 16 (2^4)
+euint32 multiplied = FHE.shl(value, 4);
+
+// Divide by 8 (2^3)
+euint32 divided = FHE.shr(value, 3);
+```
+
+### 3. Masking and Extraction
+
+```solidity
+// Extract lower 8 bits
+euint32 lower8 = FHE.and(value, FHE.asEuint32(0xFF));
+
+// Extract upper 8 bits (of euint16)
+euint16 upper8 = FHE.shr(FHE.and(value, FHE.asEuint16(0xFF00)), 8);
+```
+
+---
+
+## Gas Optimization
+
+### 1. Use Shift Instead of Mul/Div for Powers of 2
+
+```solidity
+// ❌ Expensive (~400k gas)
+euint32 result = FHE.mul(value, FHE.asEuint32(8));
+
+// ✅ Cheaper (~220k gas)
+euint32 result = FHE.shl(value, 3);
+```
+
+### 2. Combine Bitwise Operations
+
+```solidity
+// ❌ Multiple operations
+euint32 temp1 = FHE.and(value, mask1);
+euint32 temp2 = FHE.and(value, mask2);
+euint32 result = FHE.or(temp1, temp2);
+
+// ✅ Combine masks first (off-chain)
+uint32 combinedMask = mask1 | mask2;
+euint32 result = FHE.and(value, FHE.asEuint32(combinedMask));
+```
+
+### 3. Use Smallest Type Possible
+
+```solidity
+// ❌ Wasteful
+euint256 flags;  // Only using 10 bits
+
+// ✅ Efficient
+euint16 flags;   // Sufficient for 16 flags
+```
+
+---
+
+## Important Notes
+
+<Info>
+  **Boolean Operations**: `FHE.and()`, `FHE.or()`, `FHE.not()` work on both integers (bitwise) and booleans (logical).
+</Info>
+
+<Tip>
+  **Shift vs Multiply**: Use `FHE.shl()` instead of `FHE.mul()` for multiplying by powers of 2 - it's 40-50% cheaper.
+</Tip>
+
+<Warning>
+  **Shift Amount**: Shifting by more than the bit width produces zero (for shl) or zero (for shr), not undefined behavior.
+</Warning>
+
+---
+
+## Related
+
+- [Arithmetic Operations](/api/arithmetic) - Math operations on encrypted values
+- [Comparison Operations](/api/comparison) - Compare encrypted values
+- [Gas Costs](/api/gas-costs) - Detailed gas analysis

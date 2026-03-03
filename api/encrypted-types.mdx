@@ -1,0 +1,463 @@
+---
+title: Encrypted Types
+description: Complete reference for all encrypted types in the FHE library
+---
+
+## Overview
+
+The FHE library provides encrypted equivalents for standard Solidity types. These types allow computation on encrypted data without revealing the underlying values.
+
+## Import
+
+```solidity
+import { 
+    euint8, euint16, euint32, euint64, euint128, euint256,
+    ebool,
+    eaddress
+} from "@fhevm/solidity/lib/FHE.sol";
+```
+
+## Unsigned Integer Types
+
+### euint8
+
+8-bit encrypted unsigned integer.
+
+<ParamField path="euint8" type="type">
+  Encrypted 8-bit unsigned integer (range: 0-255)
+</ParamField>
+
+**Range**: 0 to 255
+
+**Plaintext Equivalent**: `uint8`
+
+**Usage**:
+```solidity
+euint8 smallCounter = FHE.asEuint8(42);
+euint8 result = FHE.add(smallCounter, FHE.asEuint8(10));
+```
+
+**Best For**:
+- Boolean-like values with multiple states (0-255)
+- Small counters (votes, attempts, flags)
+- Enum representations
+- Age, percentages (0-100)
+
+---
+
+### euint16
+
+16-bit encrypted unsigned integer.
+
+<ParamField path="euint16" type="type">
+  Encrypted 16-bit unsigned integer (range: 0-65,535)
+</ParamField>
+
+**Range**: 0 to 65,535
+
+**Plaintext Equivalent**: `uint16`
+
+**Usage**:
+```solidity
+euint16 counter = FHE.asEuint16(1000);
+euint16 doubled = FHE.mul(counter, 2);
+```
+
+**Best For**:
+- Counters (votes, tickets, items)
+- Small token amounts
+- Indices and IDs
+
+---
+
+### euint32
+
+32-bit encrypted unsigned integer.
+
+<ParamField path="euint32" type="type">
+  Encrypted 32-bit unsigned integer (range: 0 to 4,294,967,295)
+</ParamField>
+
+**Range**: 0 to 4,294,967,295
+
+**Plaintext Equivalent**: `uint32`
+
+**Usage**:
+```solidity
+euint32 balance = FHE.asEuint32(1000000);
+euint32 newBalance = FHE.add(balance, FHE.asEuint32(500));
+```
+
+**Best For**:
+- Unix timestamps (until year 2106)
+- Token balances (with limited decimals)
+- Prices in cents
+- Medium-range values
+
+**Example**:
+```solidity
+contract SimpleCounter is ZamaEthereumConfig {
+    euint32 private counter;
+    
+    function increment() external {
+        counter = FHE.add(counter, 1);
+        FHE.allowThis(counter);
+    }
+    
+    function getCounter() external view returns (euint32) {
+        return counter;
+    }
+}
+```
+
+---
+
+### euint64
+
+64-bit encrypted unsigned integer.
+
+<ParamField path="euint64" type="type">
+  Encrypted 64-bit unsigned integer (range: 0 to 18,446,744,073,709,551,615)
+</ParamField>
+
+**Range**: 0 to 18,446,744,073,709,551,615 (~18.4 quintillion)
+
+**Plaintext Equivalent**: `uint64`
+
+**Usage**:
+```solidity
+euint64 tokenBalance = FHE.asEuint64(1_000_000_000_000); // 1M tokens with 6 decimals
+```
+
+**Best For**:
+- ERC-20 token balances (6-8 decimals)
+- Large counters
+- Timestamps with milliseconds
+- Medium-to-large financial amounts
+
+**Example (Confidential ERC-20)**:
+```solidity
+contract ConfidentialToken is ZamaEthereumConfig {
+    mapping(address => euint64) private balances;
+    
+    function transfer(address to, externalEuint64 encAmount, bytes calldata proof) external {
+        euint64 amount = FHE.fromExternal(encAmount, proof);
+        ebool hasBalance = FHE.ge(balances[msg.sender], amount);
+        
+        euint64 newSenderBal = FHE.select(
+            hasBalance,
+            FHE.sub(balances[msg.sender], amount),
+            balances[msg.sender]
+        );
+        
+        euint64 newReceiverBal = FHE.select(
+            hasBalance,
+            FHE.add(balances[to], amount),
+            balances[to]
+        );
+        
+        balances[msg.sender] = newSenderBal;
+        balances[to] = newReceiverBal;
+        
+        FHE.allowThis(newSenderBal);
+        FHE.allow(newSenderBal, msg.sender);
+        FHE.allowThis(newReceiverBal);
+        FHE.allow(newReceiverBal, to);
+    }
+}
+```
+
+---
+
+### euint128
+
+128-bit encrypted unsigned integer.
+
+<ParamField path="euint128" type="type">
+  Encrypted 128-bit unsigned integer (range: 0 to 3.4 × 10³⁸)
+</ParamField>
+
+**Range**: 0 to 340,282,366,920,938,463,463,374,607,431,768,211,455
+
+**Plaintext Equivalent**: `uint128`
+
+**Usage**:
+```solidity
+euint128 largeBalance = FHE.asEuint128(1_000_000_000_000_000_000_000); // 1000 tokens @ 18 decimals
+```
+
+**Best For**:
+- ERC-20 tokens with 18 decimals
+- Very large financial amounts
+- Accumulated values over long periods
+
+---
+
+### euint256
+
+256-bit encrypted unsigned integer.
+
+<ParamField path="euint256" type="type">
+  Encrypted 256-bit unsigned integer (range: 0 to 1.15 × 10⁷⁷)
+</ParamField>
+
+**Range**: 0 to 115,792,089,237,316,195,423,570,985,008,687,907,853,269,984,665,640,564,039,457,584,007,913,129,639,935
+
+**Plaintext Equivalent**: `uint256`
+
+**Usage**:
+```solidity
+euint256 veryLargeValue = FHE.asEuint256(type(uint256).max / 2);
+```
+
+**Best For**:
+- Maximum compatibility with existing Solidity contracts
+- Extremely large values
+- Hashes and cryptographic values
+
+<Warning>
+  `euint256` operations are 3-5x more expensive than `euint64`. Use smaller types when possible.
+</Warning>
+
+---
+
+## Boolean Type
+
+### ebool
+
+Encrypted boolean value.
+
+<ParamField path="ebool" type="type">
+  Encrypted boolean (true or false)
+</ParamField>
+
+**Plaintext Equivalent**: `bool`
+
+**Usage**:
+```solidity
+ebool isEligible = FHE.asEbool(true);
+ebool result = FHE.and(isEligible, FHE.gt(age, FHE.asEuint8(18)));
+```
+
+**Operations**:
+- Logical: `FHE.and()`, `FHE.or()`, `FHE.not()`
+- Comparison results: All `FHE.eq()`, `FHE.gt()`, etc. return `ebool`
+- Conditional: `FHE.select(ebool, valueIfTrue, valueIfFalse)`
+
+**Example**:
+```solidity
+contract ConfidentialVoting is ZamaEthereumConfig {
+    mapping(address => ebool) private hasVoted;
+    
+    function vote(bool support, externalEbool encHasVoted, bytes calldata proof) external {
+        ebool voted = FHE.fromExternal(encHasVoted, proof);
+        ebool canVote = FHE.not(hasVoted[msg.sender]);
+        
+        // Only count vote if user hasn't voted
+        ebool voteToAdd = FHE.and(canVote, FHE.asEbool(support));
+        
+        hasVoted[msg.sender] = FHE.or(hasVoted[msg.sender], canVote);
+        FHE.allowThis(hasVoted[msg.sender]);
+    }
+}
+```
+
+---
+
+## Address Type
+
+### eaddress
+
+Encrypted Ethereum address.
+
+<ParamField path="eaddress" type="type">
+  Encrypted Ethereum address (20 bytes)
+</ParamField>
+
+**Plaintext Equivalent**: `address`
+
+**Usage**:
+```solidity
+eaddress encryptedRecipient = FHE.asEaddress(msg.sender);
+ebool isSameAddress = FHE.eq(encryptedRecipient, FHE.asEaddress(owner));
+```
+
+**Operations**:
+- Comparison: `FHE.eq()`, `FHE.ne()`
+- Selection: `FHE.select(ebool, eaddress, eaddress)`
+
+**Example (Sealed-Bid Auction)**:
+```solidity
+contract SealedBidAuction is ZamaEthereumConfig {
+    eaddress private highestBidder;
+    euint64 private highestBid;
+    
+    function bid(externalEuint64 encAmount, bytes calldata proof) external {
+        euint64 amount = FHE.fromExternal(encAmount, proof);
+        ebool isHigher = FHE.gt(amount, highestBid);
+        
+        // Update highest bidder if bid is higher
+        highestBidder = FHE.select(
+            isHigher,
+            FHE.asEaddress(msg.sender),
+            highestBidder
+        );
+        
+        highestBid = FHE.select(isHigher, amount, highestBid);
+        
+        FHE.allowThis(highestBidder);
+        FHE.allowThis(highestBid);
+    }
+}
+```
+
+---
+
+## External Input Types
+
+For function parameters that receive encrypted inputs from users:
+
+<ParamField path="externalEuint8" type="type">
+  External encrypted uint8 (requires conversion with `FHE.fromExternal`)
+</ParamField>
+
+<ParamField path="externalEuint16" type="type">
+  External encrypted uint16
+</ParamField>
+
+<ParamField path="externalEuint32" type="type">
+  External encrypted uint32
+</ParamField>
+
+<ParamField path="externalEuint64" type="type">
+  External encrypted uint64
+</ParamField>
+
+<ParamField path="externalEuint128" type="type">
+  External encrypted uint128
+</ParamField>
+
+<ParamField path="externalEuint256" type="type">
+  External encrypted uint256
+</ParamField>
+
+<ParamField path="externalEbool" type="type">
+  External encrypted boolean
+</ParamField>
+
+<ParamField path="externalEaddress" type="type">
+  External encrypted address
+</ParamField>
+
+**Usage**:
+```solidity
+function storeValue(externalEuint32 encValue, bytes calldata inputProof) external {
+    euint32 value = FHE.fromExternal(encValue, inputProof);
+    FHE.allowThis(value);
+}
+```
+
+See [Input Conversion](/api/input-conversion) for complete reference.
+
+---
+
+## Type Comparison Table
+
+| Type | Bits | Range | Gas Cost (Relative) | Best Use Case |
+|------|------|-------|---------------------|---------------|
+| `euint8` | 8 | 0 - 255 | 1x (baseline) | Flags, small counters |
+| `euint16` | 16 | 0 - 65,535 | ~1.5x | Counters, small amounts |
+| `euint32` | 32 | 0 - 4.3B | ~2.2x | Timestamps, balances |
+| `euint64` | 64 | 0 - 18.4 quintillion | ~3.1x | Token balances |
+| `euint128` | 128 | 0 - 3.4×10³⁸ | ~5x | Large token amounts |
+| `euint256` | 256 | 0 - 1.15×10⁷⁷ | ~7.5x | Maximum compatibility |
+| `ebool` | 1 | true/false | ~1x | Flags, conditions |
+| `eaddress` | 160 | 20-byte address | ~2.5x | Encrypted recipients |
+
+---
+
+## Type Initialization
+
+### Check if Initialized
+
+```solidity
+bool isSet = FHE.isInitialized(encryptedValue);
+require(isSet, "Value not initialized");
+```
+
+### Initialize from Plaintext
+
+```solidity
+euint32 value = FHE.asEuint32(100);
+ebool flag = FHE.asEbool(true);
+eaddress addr = FHE.asEaddress(msg.sender);
+```
+
+### Initialize from External Input
+
+```solidity
+function receiveInput(externalEuint64 encValue, bytes calldata proof) external {
+    euint64 value = FHE.fromExternal(encValue, proof);
+    FHE.allowThis(value);
+}
+```
+
+---
+
+## Best Practices
+
+### 1. Use the Smallest Type That Fits
+
+```solidity
+// ❌ Wasteful
+euint256 voteCount;  // 0-100 votes
+
+// ✅ Efficient
+euint8 voteCount;    // 0-255 range is sufficient
+```
+
+### 2. Always Set ACL After Operations
+
+```solidity
+euint32 result = FHE.add(a, b);
+FHE.allowThis(result);           // REQUIRED
+FHE.allow(result, msg.sender);   // If user needs access
+```
+
+### 3. Check Initialization Before Use
+
+```solidity
+require(FHE.isInitialized(balances[user]), "No balance set");
+```
+
+### 4. Use Type Casting for Conversions
+
+```solidity
+euint8 small = FHE.asEuint8(10);
+euint32 larger = FHE.asEuint32(small);  // Upcast
+```
+
+See [Type Casting](/api/type-casting) for complete reference.
+
+---
+
+## Storage Considerations
+
+Encrypted types are stored as **handles** (pointers to ciphertext), not the full ciphertext:
+
+```solidity
+mapping(address => euint64) private balances;  // Stores 32-byte handles
+```
+
+- **Storage cost**: Same as `uint256` (1 slot = 20k gas for new, 5k for update)
+- **Ciphertext storage**: Managed by the FHE coprocessor
+- **Handle size**: 32 bytes regardless of type
+
+---
+
+## Related
+
+- [Type Casting](/api/type-casting) - Convert between encrypted types
+- [Input Conversion](/api/input-conversion) - Convert external inputs to encrypted types
+- [Arithmetic Operations](/api/arithmetic) - Perform calculations on encrypted types
+- [Gas Costs](/api/gas-costs) - Understand costs by type

@@ -1,0 +1,305 @@
+---
+title: "Encrypted Inputs & ZK Proofs"
+description: "Learn how users submit truly private data using client-side encryption and zero-knowledge proofs"
+icon: "lock-keyhole"
+---
+
+## Overview
+
+In previous modules, we used `FHE.asEuint32(plaintext)` to create encrypted values. While this encrypts the value on-chain, the **plaintext is visible in the transaction calldata**.
+
+For truly private inputs, FHEVM provides **client-side encryption** where users encrypt data before submitting it to the blockchain.
+
+## The Privacy Problem
+
+### What Happens with `FHE.asEuint32()`
+
+```solidity
+// The user calls: contract.setBid(1000)
+function setBid(uint32 amount) public {
+    _bid = FHE.asEuint32(amount);  // Encrypted on-chain
+}
+```
+
+<Warning>
+The transaction calldata contains plaintext `1000` — visible to everyone monitoring the mempool or reading the blockchain!
+</Warning>
+
+### The Solution: Client-Side Encryption
+
+```
+┌──────────────┐    encrypted blob     ┌──────────────────┐
+│   User's     │ ─────────────────────► │   Smart Contract  │
+│   Browser    │    (+ ZK proof)       │                   │
+│              │                       │   externalEuint32 │
+│  plaintext   │                       │   FHE.fromExternal│
+│  → encrypt() │                       │   → euint32       │
+└──────────────┘                       └──────────────────┘
+```
+
+The plaintext **never appears** on-chain.
+
+## External Encrypted Types
+
+FHEVM provides special types for receiving client-encrypted data:
+
+| External Type | On-Chain Type | Description |
+|--------------|---------------|-------------|
+| `externalEbool` | `ebool` | Encrypted boolean input |
+| `externalEuint8` | `euint8` | Encrypted 8-bit input |
+| `externalEuint16` | `euint16` | Encrypted 16-bit input |
+| `externalEuint32` | `euint32` | Encrypted 32-bit input |
+| `externalEuint64` | `euint64` | Encrypted 64-bit input |
+| `externalEuint128` | `euint128` | Encrypted 128-bit input |
+| `externalEuint256` | `euint256` | Encrypted 256-bit input |
+| `externalEaddress` | `eaddress` | Encrypted address input |
+
+## `FHE.fromExternal()` — Converting External Inputs
+
+### Basic Usage
+
+```solidity SecureInput.sol
+function storeUint32(externalEuint32 encValue, bytes calldata inputProof) external {
+    euint32 value = FHE.fromExternal(encValue, inputProof);
+    _storedUint32 = value;
+    FHE.allowThis(_storedUint32);
+    FHE.allow(_storedUint32, msg.sender);
+}
+```
+
+<Info>
+**What `FHE.fromExternal(input, proof)` does:**
+1. Validates the ZK proof
+2. Registers the ciphertext in the FHE co-processor
+3. Returns an on-chain encrypted handle
+</Info>
+
+### Multiple Encrypted Inputs
+
+You can accept multiple encrypted inputs in a single function:
+
+```solidity SecureInput.sol
+function storeMultiple(
+    externalEuint32 encA,
+    externalEuint64 encB,
+    bytes calldata inputProof
+) external {
+    _storedUint32 = FHE.fromExternal(encA, inputProof);
+    _storedUint64 = FHE.fromExternal(encB, inputProof);
+    
+    FHE.allowThis(_storedUint32);
+    FHE.allow(_storedUint32, msg.sender);
+    FHE.allowThis(_storedUint64);
+    FHE.allow(_storedUint64, msg.sender);
+}
+```
+
+<Tip>
+All encrypted inputs share the same `inputProof` parameter. The proof validates the entire batch.
+</Tip>
+
+## Client-Side Encryption Flow
+
+### Step 1: Create FHEVM Instance
+
+```javascript
+import { createInstance } from "@zama-fhe/relayer-sdk/web";
+import { BrowserProvider } from "ethers";
+
+const provider = new BrowserProvider(window.ethereum);
+const instance = await createInstance({
+  network: await provider.send("eth_chainId", []),
+  relayerUrl: "https://gateway.zama.ai",
+});
+```
+
+### Step 2: Encrypt the Value
+
+```javascript
+const signer = await provider.getSigner();
+const userAddress = await signer.getAddress();
+
+const input = await instance.input.createEncryptedInput(
+  contractAddress,
+  userAddress
+);
+input.add32(1000); // The plaintext value to encrypt
+const encrypted = await input.encrypt();
+
+// encrypted contains:
+// - encrypted.handles[0]: the ciphertext handle
+// - encrypted.inputProof: the ZK proof
+```
+
+### Step 3: Send the Transaction
+
+```javascript
+const tx = await contract.storeUint32(
+  encrypted.handles[0],
+  encrypted.inputProof
+);
+await tx.wait();
+```
+
+## The Role of ZK Proofs
+
+### Why ZK Proofs Are Needed
+
+Without ZK proofs, a malicious user could submit:
+- Invalid ciphertexts that cause FHE operations to fail
+- Ciphertexts encoding values outside the valid range
+- Ciphertexts not encrypted under the correct FHE public key
+
+### What the ZK Proof Guarantees
+
+<CardGroup cols={3}>
+  <Card title="Well-Formedness" icon="check-circle">
+    The ciphertext is valid encryption under the network's FHE public key
+  </Card>
+  <Card title="Range Proof" icon="ruler">
+    The encrypted value fits within the declared type's range
+  </Card>
+  <Card title="Knowledge Proof" icon="eye">
+    The submitter actually knows the plaintext value
+  </Card>
+</CardGroup>
+
+<Info>
+The ZK proof verification happens automatically inside `FHE.fromExternal()`. You do not need to verify it manually.
+</Info>
+
+## Practical Example: Sealed-Bid Auction
+
+### Contract
+
+```solidity
+contract SealedBidAuction is ZamaEthereumConfig {
+    mapping(address => euint64) private _bids;
+    mapping(address => bool) private _hasBid;
+    euint64 private _highestBid;
+
+    function submitBid(
+        externalEuint64 encryptedBid,
+        bytes calldata inputProof
+    ) external {
+        require(!_hasBid[msg.sender], "Already bid");
+        
+        // Convert external encrypted input to on-chain type
+        euint64 bid = FHE.fromExternal(encryptedBid, inputProof);
+        
+        _bids[msg.sender] = bid;
+        _hasBid[msg.sender] = true;
+        _highestBid = FHE.max(_highestBid, bid);
+        
+        // ACL
+        FHE.allowThis(_bids[msg.sender]);
+        FHE.allow(_bids[msg.sender], msg.sender);
+        FHE.allowThis(_highestBid);
+    }
+}
+```
+
+### Client Code
+
+```javascript
+import { createInstance } from "@zama-fhe/relayer-sdk/web";
+
+async function submitBid(contractAddress, bidAmount) {
+    const provider = new ethers.BrowserProvider(window.ethereum);
+    const signer = await provider.getSigner();
+    const userAddress = await signer.getAddress();
+    
+    const instance = await createInstance({ network: provider });
+    
+    // Encrypt the bid
+    const input = await instance.input.createEncryptedInput(
+        contractAddress,
+        userAddress
+    );
+    input.add64(bidAmount);
+    const encrypted = await input.encrypt();
+    
+    // Submit to contract
+    const contract = new ethers.Contract(contractAddress, ABI, signer);
+    const tx = await contract.submitBid(
+        encrypted.handles[0],
+        encrypted.inputProof
+    );
+    await tx.wait();
+}
+```
+
+## Hardhat Tests vs Browser
+
+| Environment | API |
+|-------------|-----|
+| Browser (Relayer SDK) | `instance.input.createEncryptedInput(contractAddr, userAddr)` |
+| Hardhat Tests | `fhevm.createEncryptedInput(contractAddr, signerAddr)` |
+
+```javascript
+// Hardhat test
+const encrypted = await fhevm
+  .createEncryptedInput(contractAddress, deployer.address)
+  .add32(42)
+  .encrypt();
+await contract.myFunction(encrypted.handles[0], encrypted.inputProof);
+```
+
+## Common Mistakes
+
+### Mistake 1: Forgetting the `bytes calldata inputProof` Parameter
+
+```solidity
+// ❌ WRONG — missing proof parameter
+function bad(externalEuint32 encValue) public { }
+
+// ✅ CORRECT
+function good(externalEuint32 encValue, bytes calldata inputProof) external { }
+```
+
+### Mistake 2: Forgetting to Call `FHE.fromExternal()`
+
+```solidity
+// ❌ WRONG — cannot use externalEuint32 directly
+function bad(externalEuint32 encValue, bytes calldata inputProof) external {
+    _value = FHE.add(_value, encValue); // ERROR
+}
+
+// ✅ CORRECT
+function good(externalEuint32 encValue, bytes calldata inputProof) external {
+    euint32 val = FHE.fromExternal(encValue, inputProof);
+    _value = FHE.add(_value, val);
+    FHE.allowThis(_value);
+}
+```
+
+### Mistake 3: Not Using Encrypted Inputs for Private Data
+
+```solidity
+// ❌ BAD — user's vote is visible in calldata
+function vote(uint8 candidate) public {
+    _votes[msg.sender] = FHE.asEuint8(candidate);
+}
+
+// ✅ GOOD — user's vote is encrypted before submission
+function vote(externalEuint8 encryptedVote, bytes calldata inputProof) external {
+    euint8 v = FHE.fromExternal(encryptedVote, inputProof);
+    _votes[msg.sender] = v;
+    FHE.allowThis(_votes[msg.sender]);
+}
+```
+
+## Summary
+
+| Concept | Details |
+|---------|---------|
+| **Problem** | `FHE.asEuintXX(plaintext)` exposes the value in calldata |
+| **Solution** | Client encrypts data before sending; contract receives `externalEuintXX` |
+| **Conversion** | `FHE.fromExternal(input, inputProof)` validates ZK proof and returns `euintXX` |
+| **Parameters** | Function must accept both `externalEuintXX` and `bytes calldata inputProof` |
+| **ZK proof** | Automatically verified — ensures well-formedness and range validity |
+| **Client library** | Relayer SDK (`@zama-fhe/relayer-sdk`) handles encryption and proof generation |
+
+<Card title="Next Module" icon="arrow-right" href="/modules/07-decryption">
+  Learn how to decrypt encrypted values for users and public reveal
+</Card>

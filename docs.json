@@ -1,122 +1,155 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "FHEVM Bootcamp",
+  "theme": "aspen",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#6366F1",
+    "light": "#818CF8",
+    "dark": "#4F46E5"
   },
-  "favicon": "/favicon.svg",
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/Himess/fhevm-bootcamp"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/Himess/fhevm-bootcamp"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Get Started",
             "pages": [
-              "index",
-              "quickstart",
-              "development"
+              "introduction",
+              "quick-start",
+              "installation",
+              "curriculum-overview"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Week 1: Foundations",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "modules/00-prerequisites",
+              "modules/01-intro-to-fhe",
+              "modules/02-development-setup",
+              "modules/03-encrypted-types",
+              "modules/04-operations"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Week 2: Core Patterns",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "modules/05-access-control",
+              "modules/06-encrypted-inputs",
+              "modules/07-decryption",
+              "modules/08-conditional-logic",
+              "modules/09-randomness"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "Week 3: Applications",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "modules/10-frontend-integration",
+              "modules/11-confidential-erc20",
+              "modules/12-confidential-voting",
+              "modules/13-sealed-bid-auction",
+              "modules/14-testing-debugging"
+            ]
+          },
+          {
+            "group": "Week 4: Mastery",
+            "pages": [
+              "modules/15-gas-optimization",
+              "modules/16-security-best-practices",
+              "modules/17-advanced-patterns",
+              "modules/18-confidential-defi",
+              "modules/19-capstone-dao"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/testing-fhe-contracts",
+              "guides/deploying-to-sepolia",
+              "guides/frontend-integration",
+              "guides/common-pitfalls"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "API Reference",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Overview",
             "pages": [
-              "api-reference/introduction"
+              "api/fhe-library",
+              "api/encrypted-types"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Operations",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "api/arithmetic",
+              "api/bitwise",
+              "api/comparison",
+              "api/conditional"
+            ]
+          },
+          {
+            "group": "Access Control",
+            "pages": [
+              "api/acl",
+              "api/input-conversion",
+              "api/decryption"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "api/randomness",
+              "api/type-casting",
+              "api/gas-costs"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Resources",
+        "groups": [
+          {
+            "group": "Reference",
+            "pages": [
+              "resources/cheatsheet",
+              "resources/glossary",
+              "resources/security-checklist"
+            ]
+          },
+          {
+            "group": "Learning",
+            "pages": [
+              "resources/learning-paths",
+              "resources/homework-assignments",
+              "resources/assessment-system"
+            ]
+          },
+          {
+            "group": "Additional",
+            "pages": [
+              "resources/contracts-reference",
+              "resources/deployed-contracts",
+              "resources/contributing",
+              "resources/faq"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

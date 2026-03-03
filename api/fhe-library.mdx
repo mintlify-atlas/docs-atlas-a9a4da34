@@ -1,0 +1,279 @@
+---
+title: FHE Library Overview
+description: Complete reference for the fhEVM FHE library for confidential smart contracts
+---
+
+## Introduction
+
+The FHE library (`@fhevm/solidity/lib/FHE.sol`) provides Fully Homomorphic Encryption (FHE) capabilities for Solidity smart contracts. It enables computation on encrypted data without revealing the underlying values, allowing developers to build privacy-preserving applications on Ethereum.
+
+## Quick Start
+
+```solidity
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import { FHE, euint32, euint64, ebool, eaddress } from "@fhevm/solidity/lib/FHE.sol";
+import { ZamaEthereumConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
+
+contract MyContract is ZamaEthereumConfig {
+    // Your encrypted contract logic here
+}
+```
+
+## Core Concepts
+
+### Encrypted Types
+
+The FHE library provides encrypted equivalents for standard Solidity types:
+
+- **Unsigned Integers**: `euint8`, `euint16`, `euint32`, `euint64`, `euint128`, `euint256`
+- **Boolean**: `ebool`
+- **Address**: `eaddress`
+
+See [Encrypted Types](/api/encrypted-types) for complete reference.
+
+### Operations
+
+All standard operations are available on encrypted types:
+
+- **Arithmetic**: `add`, `sub`, `mul`, `div`, `rem`, `min`, `max`, `neg`
+- **Comparison**: `eq`, `ne`, `gt`, `ge`, `lt`, `le`
+- **Bitwise**: `and`, `or`, `xor`, `not`, `shl`, `shr`, `rotl`, `rotr`
+- **Conditional**: `select` (encrypted ternary operator)
+
+### Access Control
+
+Every encrypted value has an Access Control List (ACL). You must grant permissions for any address to use an encrypted value:
+
+```solidity
+euint32 value = FHE.asEuint32(100);
+FHE.allowThis(value);           // Contract can use it
+FHE.allow(value, msg.sender);   // User can decrypt it
+```
+
+See [ACL Documentation](/api/acl) for complete reference.
+
+### Input Conversion
+
+Convert external encrypted inputs with zero-knowledge proofs:
+
+```solidity
+function receiveInput(externalEuint32 encInput, bytes calldata inputProof) external {
+    euint32 value = FHE.fromExternal(encInput, inputProof);
+    FHE.allowThis(value);
+}
+```
+
+See [Input Conversion](/api/input-conversion) for complete reference.
+
+## Library Structure
+
+### Namespace: `FHE`
+
+All operations are accessed through the `FHE` library:
+
+```solidity
+import { FHE } from "@fhevm/solidity/lib/FHE.sol";
+
+// Arithmetic
+FHE.add(a, b)
+FHE.mul(x, y)
+
+// Comparison
+FHE.gt(a, b)
+FHE.eq(x, y)
+
+// ACL
+FHE.allowThis(value)
+FHE.allow(value, recipient)
+```
+
+### Configuration
+
+All contracts using FHE must inherit from `ZamaEthereumConfig`:
+
+```solidity
+import { ZamaEthereumConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
+
+contract MyContract is ZamaEthereumConfig {
+    // Contract implementation
+}
+```
+
+## Key Design Patterns
+
+### 1. Conditional Logic with `select`
+
+Never use `if` statements on encrypted values. Use `FHE.select()` instead:
+
+```solidity
+// ❌ WRONG: Cannot branch on encrypted values
+if (FHE.decrypt(encryptedBool)) {
+    // This doesn't work
+}
+
+// ✅ CORRECT: Use FHE.select
+ebool condition = FHE.gt(balance, amount);
+euint64 newBalance = FHE.select(
+    condition,
+    FHE.sub(balance, amount),  // if true
+    balance                     // if false
+);
+```
+
+### 2. Always Set ACL Permissions
+
+After every operation that creates a new ciphertext:
+
+```solidity
+euint32 result = FHE.add(a, b);
+FHE.allowThis(result);           // Contract needs access
+FHE.allow(result, msg.sender);   // User needs access
+```
+
+### 3. Silent Failure for Privacy
+
+To avoid information leakage, use `select` instead of `require`:
+
+```solidity
+// ❌ WRONG: Reveals if balance is sufficient
+require(balance >= amount, "Insufficient balance");
+
+// ✅ CORRECT: Silently transfer 0 if insufficient
+ebool hasBalance = FHE.ge(balance, amount);
+euint64 actualAmount = FHE.select(hasBalance, amount, FHE.asEuint64(0));
+```
+
+### 4. Use Smallest Type Possible
+
+Gas costs scale with bit width. Use the smallest type that fits your data:
+
+```solidity
+// ❌ Expensive: uint256 for a counter
+euint256 voteCount;
+
+// ✅ Efficient: uint8 or uint16 for counters
+euint8 voteCount;  // Fits 0-255
+```
+
+## Complete Example: Confidential Token Transfer
+
+```solidity
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import { FHE, euint64, externalEuint64, ebool } from "@fhevm/solidity/lib/FHE.sol";
+import { ZamaEthereumConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
+
+contract ConfidentialToken is ZamaEthereumConfig {
+    mapping(address => euint64) private balances;
+
+    function transfer(address to, externalEuint64 encAmount, bytes calldata inputProof) external {
+        // 1. Convert external input
+        euint64 amount = FHE.fromExternal(encAmount, inputProof);
+
+        // 2. Check balance (encrypted)
+        ebool hasEnough = FHE.ge(balances[msg.sender], amount);
+
+        // 3. Compute new balances (branch-free)
+        euint64 newSenderBal = FHE.select(
+            hasEnough,
+            FHE.sub(balances[msg.sender], amount),
+            balances[msg.sender]
+        );
+        euint64 newReceiverBal = FHE.select(
+            hasEnough,
+            FHE.add(balances[to], amount),
+            balances[to]
+        );
+
+        // 4. Update storage
+        balances[msg.sender] = newSenderBal;
+        balances[to] = newReceiverBal;
+
+        // 5. Set ACL permissions
+        FHE.allowThis(newSenderBal);
+        FHE.allow(newSenderBal, msg.sender);
+        FHE.allowThis(newReceiverBal);
+        FHE.allow(newReceiverBal, to);
+    }
+}
+```
+
+## API Reference
+
+<CardGroup cols={3}>
+  <Card title="Encrypted Types" icon="lock" href="/api/encrypted-types">
+    euint8-256, ebool, eaddress
+  </Card>
+  <Card title="Arithmetic Operations" icon="calculator" href="/api/arithmetic">
+    add, sub, mul, div, rem, min, max, neg
+  </Card>
+  <Card title="Bitwise Operations" icon="binary" href="/api/bitwise">
+    and, or, xor, not, shl, shr, rotl, rotr
+  </Card>
+  <Card title="Comparison" icon="greater-than" href="/api/comparison">
+    eq, ne, gt, ge, lt, le
+  </Card>
+  <Card title="Conditional Logic" icon="code-branch" href="/api/conditional">
+    select (encrypted ternary)
+  </Card>
+  <Card title="Access Control" icon="shield" href="/api/acl">
+    allow, allowThis, allowTransient
+  </Card>
+  <Card title="Input Conversion" icon="arrow-right-to-bracket" href="/api/input-conversion">
+    fromExternal with ZK proofs
+  </Card>
+  <Card title="Decryption" icon="unlock" href="/api/decryption">
+    User decryption and public reveal
+  </Card>
+  <Card title="Randomness" icon="dice" href="/api/randomness">
+    randEuint8-256, randEbool
+  </Card>
+  <Card title="Type Casting" icon="arrows-turn-to-dots" href="/api/type-casting">
+    asEuint conversions
+  </Card>
+  <Card title="Gas Costs" icon="gas-pump" href="/api/gas-costs">
+    Operation costs and optimization
+  </Card>
+</CardGroup>
+
+## Best Practices
+
+### Security
+
+1. **Never decrypt on-chain unless necessary** - Use client-side re-encryption for user-specific data
+2. **Avoid information leakage** - Use silent failures instead of `require` statements
+3. **Always validate ACL permissions** - Check `FHE.isSenderAllowed()` before operations
+4. **Use transient permissions carefully** - `allowTransient` only works within the same transaction
+
+### Gas Optimization
+
+1. **Use smallest types** - `euint8` is 3-4x cheaper than `euint256`
+2. **Minimize FHE operations** - Each operation costs 50-500k gas
+3. **Cache intermediate results** - Avoid recomputing the same encrypted value
+4. **Use plaintext operands when possible** - Mixed operations are 30-40% cheaper
+
+See [Gas Costs Guide](/api/gas-costs) for detailed optimization strategies.
+
+## Important Notes
+
+<Warning>
+  FHE operations are 50,000-100,000x more expensive than plaintext operations. Design your contracts to minimize encrypted computations.
+</Warning>
+
+<Info>
+  Overflow wraps silently in FHE operations. There is no revert on overflow, just like unchecked arithmetic.
+</Info>
+
+<Tip>
+  Use `FHE.min()` and `FHE.max()` for clamping values instead of manual comparison + select.
+</Tip>
+
+## Support
+
+For issues, questions, or feature requests:
+- GitHub: [zama-ai/fhevm](https://github.com/zama-ai/fhevm)
+- Discord: [Zama Community](https://discord.fhe.org)
+- Documentation: [docs.zama.ai](https://docs.zama.ai/fhevm)

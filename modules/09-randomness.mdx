@@ -1,0 +1,420 @@
+---
+title: "On-Chain Randomness"
+description: "Generate truly unpredictable encrypted random numbers using the FHE co-processor"
+icon: "dice"
+---
+
+## Overview
+
+Randomness is fundamental for lotteries, games, NFT minting, and random selection. However, generating truly unpredictable and manipulation-resistant randomness on a deterministic blockchain is one of the hardest problems in smart contract development.
+
+FHEVM introduces **encrypted on-chain randomness**: random values that are encrypted at creation time — nobody can see the random value, not even the block producer or the contract itself. This makes front-running and manipulation mathematically impossible.
+
+## The Problem with On-Chain Randomness
+
+### Why Is Randomness Hard on Blockchain?
+
+Blockchains are **deterministic state machines**. Every node must compute the same result for the same input. This conflicts with randomness — if everyone can compute the same "random" value, it is not random at all.
+
+### Common (Broken) Approaches
+
+<Accordion title="block.timestamp">
+```solidity
+// ❌ INSECURE: Miners/validators can manipulate the timestamp
+uint256 random = uint256(keccak256(abi.encodePacked(block.timestamp)));
+```
+
+- Block producers can adjust `block.timestamp` within allowed bounds (~15 seconds)
+- The value is known before the transaction is mined
+- Anyone watching the mempool can predict the outcome
+</Accordion>
+
+<Accordion title="block.prevrandao">
+```solidity
+// ❌ INSECURE: Known before block execution
+uint256 random = uint256(keccak256(abi.encodePacked(block.prevrandao)));
+```
+
+- Validators know `prevrandao` before they propose the block
+- They can choose to include or exclude transactions based on the outcome
+- MEV bots can front-run transactions that depend on it
+</Accordion>
+
+<Accordion title="blockhash">
+```solidity
+// ❌ INSECURE: Predictable within the same block
+uint256 random = uint256(blockhash(block.number - 1));
+```
+
+- The blockhash is known to all participants before the next block
+- Block producers can withhold blocks if the hash produces an unfavorable result
+</Accordion>
+
+### Chainlink VRF vs FHE Randomness
+
+| Feature | Chainlink VRF | FHE Randomness |
+|---------|--------------|----------------|
+| **Randomness quality** | Cryptographically secure | Cryptographically secure |
+| **Latency** | 2+ blocks (async callback) | Same transaction (synchronous) |
+| **Cost** | LINK token + gas | Gas only |
+| **Privacy** | Random value is public | Random value is **encrypted** |
+| **Front-running** | Value visible in callback tx | Value never visible |
+| **External dependency** | Chainlink oracle network | Built into the chain |
+
+<Info>
+**Critical difference:** Chainlink VRF generates a random value that becomes **public** when delivered. FHE randomness generates a random value that remains **encrypted** — it can be used in computations without ever being revealed.
+</Info>
+
+## FHE-Based Randomness
+
+### How It Works
+
+```
+┌──────────────┐     randEuint32()     ┌──────────────────┐
+│   Contract    │ ────────────────────► │  FHE Coprocessor  │
+│               │                       │                    │
+│               │  ◄── encrypted ────── │  1. Generate random│
+│   euint32     │      ciphertext       │  2. Encrypt it     │
+│   (opaque)    │                       │  3. Return handle  │
+└──────────────┘                       └──────────────────┘
+```
+
+1. The FHE coprocessor generates a cryptographically secure random value
+2. The value is immediately encrypted under the network's FHE public key
+3. The encrypted ciphertext is returned to your contract
+4. Nobody can see the plaintext value
+
+### Why It Is Manipulation-Proof
+
+<CardGroup cols={2}>
+  <Card title="Block Producers" icon="ban">
+    Cannot see the random value because it is encrypted
+  </Card>
+  <Card title="Validators" icon="shield">
+    Cannot include/exclude transactions based on outcome — the outcome is hidden
+  </Card>
+  <Card title="MEV Bots" icon="lock">
+    Cannot front-run because the value is never exposed in mempool
+  </Card>
+  <Card title="The Contract" icon="eye-slash">
+    Cannot read the value — it can only perform encrypted operations on it
+  </Card>
+</CardGroup>
+
+## Available Random Functions
+
+| Function | Return Type | Range | Description |
+|----------|-------------|-------|-------------|
+| `FHE.randEbool()` | `ebool` | true/false | Encrypted random boolean |
+| `FHE.randEuint8()` | `euint8` | 0 – 255 | Encrypted random 8-bit integer |
+| `FHE.randEuint16()` | `euint16` | 0 – 65,535 | Encrypted random 16-bit integer |
+| `FHE.randEuint32()` | `euint32` | 0 – 4,294,967,295 | Encrypted random 32-bit integer |
+| `FHE.randEuint64()` | `euint64` | 0 – 18.4 quintillion | Encrypted random 64-bit integer |
+| `FHE.randEuint128()` | `euint128` | 0 – 2^128 - 1 | Encrypted random 128-bit integer |
+| `FHE.randEuint256()` | `euint256` | 0 – 2^256 - 1 | Encrypted random 256-bit integer |
+
+### Basic Usage
+
+```solidity RandomDemo.sol
+function generateRandom32() external {
+    _random32 = FHE.randEuint32();
+    FHE.allowThis(_random32);
+    FHE.allow(_random32, msg.sender);
+}
+
+function generateRandomBool() external {
+    _randomBool = FHE.randEbool();
+    FHE.allowThis(_randomBool);
+    FHE.allow(_randomBool, msg.sender);
+}
+```
+
+<Warning>
+You **must** set ACL permissions after generation. Random values start with an empty ACL.
+</Warning>
+
+## Random in Range
+
+Raw random values span the full range of their type. In most applications, you need a value within a specific range.
+
+### Using `FHE.rem()` to Bound Values
+
+```solidity RandomDemo.sol
+function randomInRange(uint32 max) external {
+    require(max > 0, "Max must be > 0");
+    _random32 = FHE.rem(FHE.randEuint32(), max);  // [0, max)
+    FHE.allowThis(_random32);
+}
+```
+
+### Common Patterns
+
+#### Dice Roll (1–6)
+
+```solidity
+function rollDice() public returns (euint8) {
+    euint8 raw = FHE.randEuint8();          // 0-255
+    euint8 zeroToFive = FHE.rem(raw, 6);    // 0-5
+    euint8 oneToSix = FHE.add(zeroToFive, FHE.asEuint8(1));  // 1-6
+    FHE.allowThis(oneToSix);
+    return oneToSix;
+}
+```
+
+#### Card Draw (0–51)
+
+```solidity
+function drawCard() public returns (euint8) {
+    euint8 raw = FHE.randEuint8();
+    euint8 card = FHE.rem(raw, 52);  // 0-51
+    FHE.allowThis(card);
+    return card;
+}
+```
+
+#### Random Percentage (0–99)
+
+```solidity
+function randomPercentage() public returns (euint8) {
+    euint8 raw = FHE.randEuint8();
+    euint8 percent = FHE.rem(raw, 100);  // 0-99
+    FHE.allowThis(percent);
+    return percent;
+}
+```
+
+### Bounded Random (Power-of-2 Ranges)
+
+For ranges that are powers of 2, fhEVM provides more efficient overloaded functions:
+
+```solidity
+// Generate random uint32 in [0, 16) — upperBound must be power of 2!
+euint32 rand = FHE.randEuint32(16);
+
+// Generate random uint8 in [0, 4)
+euint8 direction = FHE.randEuint8(4);  // 0=North, 1=East, 2=South, 3=West
+```
+
+<Tip>
+**When to use which?**
+- Power-of-2 range (2, 4, 8, 16...) → Use `randEuintXX(upperBound)` (more efficient)
+- Arbitrary range (e.g., 1-6 for dice) → Use `FHE.rem(FHE.randEuintXX(), max)` then add offset
+</Tip>
+
+## Practical Example: Encrypted Lottery
+
+```solidity EncryptedLottery.sol
+contract EncryptedLottery is ZamaEthereumConfig {
+    address[] public players;
+    euint32 private _winnerIndex;
+    bool public drawn;
+    address public winner;
+
+    function buyTicket() external payable {
+        require(block.timestamp <= deadline, "Lottery closed");
+        require(!hasTicket[msg.sender], "Already has ticket");
+        players.push(msg.sender);
+        hasTicket[msg.sender] = true;
+    }
+
+    function drawWinner() external onlyOwner {
+        require(block.timestamp > deadline, "Lottery still open");
+        require(!drawn, "Already drawn");
+        require(players.length > 0, "No players");
+
+        // Generate encrypted random index
+        _winnerIndex = FHE.rem(FHE.randEuint32(), uint32(players.length));
+        FHE.allowThis(_winnerIndex);
+        FHE.allow(_winnerIndex, owner);
+
+        drawn = true;
+    }
+
+    function revealWinner(uint32 index) external onlyOwner {
+        require(drawn, "Not drawn yet");
+        require(winner == address(0), "Already revealed");
+        winner = players[index];
+    }
+}
+```
+
+### Why This Is Secure
+
+| Attack Vector | Protection |
+|---------------|------------|
+| Owner sees random before committing | Random is encrypted — owner cannot see it |
+| Owner redraws until favorable | `drawn` flag prevents redrawing |
+| Player front-runs the draw | Random is generated in the draw tx, not predictable |
+| Miner/validator manipulation | Encrypted value is hidden from block producers |
+
+## Use Cases
+
+<CardGroup cols={2}>
+  <Card title="Lottery and Raffle" icon="ticket">
+    Select winners fairly without any party knowing the outcome until reveal
+  </Card>
+  <Card title="Gaming: Dice and Cards" icon="dice">
+    Generate game outcomes that cannot be predicted or manipulated
+  </Card>
+  <Card title="NFT Trait Randomization" icon="image">
+    Assign random traits at mint time without revealing until owner chooses
+  </Card>
+  <Card title="Random Selection" icon="user-check">
+    Pick a random participant from a group without revealing who is selected
+  </Card>
+</CardGroup>
+
+### Dice and Cards
+
+```solidity
+// Dice roll (1-6)
+euint8 die = FHE.add(FHE.rem(FHE.randEuint8(), 6), FHE.asEuint8(1));
+
+// Card draw (0-51)
+euint8 card = FHE.rem(FHE.randEuint8(), 52);
+
+// Coin flip
+ebool heads = FHE.randEbool();
+```
+
+### NFT Trait Randomization
+
+```solidity
+function mint(address to) external {
+    uint256 tokenId = _nextTokenId++;
+
+    // Random traits, encrypted
+    _strength[tokenId] = FHE.rem(FHE.randEuint8(), 100);    // 0-99
+    _agility[tokenId] = FHE.rem(FHE.randEuint8(), 100);     // 0-99
+    _rarity[tokenId] = FHE.rem(FHE.randEuint8(), 5);        // 0-4 (tiers)
+
+    FHE.allowThis(_strength[tokenId]);
+    FHE.allow(_strength[tokenId], to);
+    // ... repeat for other traits
+}
+```
+
+## Gas Optimization Tips
+
+### Use the Smallest Type
+
+```solidity
+// ❌ WASTEFUL: 64-bit random for a dice roll
+euint64 die = FHE.rem(FHE.randEuint64(), 6);  // Expensive
+
+// ✅ EFFICIENT: 8-bit random for a dice roll
+euint8 die = FHE.rem(FHE.randEuint8(), 6);    // Much cheaper
+```
+
+### Use `FHE.randEbool()` for Binary Decisions
+
+```solidity
+// ❌ WASTEFUL
+euint8 rand = FHE.randEuint8();
+ebool isHeads = FHE.eq(FHE.rem(rand, 2), FHE.asEuint8(0));
+
+// ✅ EFFICIENT
+ebool isHeads = FHE.randEbool();
+```
+
+## Common Pitfalls
+
+### Pitfall 1: Forgetting ACL After Generation
+
+```solidity
+// ❌ BUG: No ACL set — value is unusable
+function broken() public {
+    euint32 rand = FHE.randEuint32();
+    _stored = rand;
+    // Missing: FHE.allowThis(rand);
+}
+
+// ✅ CORRECT
+function correct() public {
+    euint32 rand = FHE.randEuint32();
+    _stored = rand;
+    FHE.allowThis(rand);
+    FHE.allow(rand, msg.sender);
+}
+```
+
+### Pitfall 2: Forgetting ACL After Operations
+
+```solidity
+// ❌ BUG: ACL is set on raw, not on result
+euint8 raw = FHE.randEuint8();
+FHE.allowThis(raw);
+
+euint8 result = FHE.rem(raw, 6);
+// result has a DIFFERENT handle — no ACL!
+// Missing: FHE.allowThis(result);
+```
+
+### Pitfall 3: Modulo Bias with Small Source Types
+
+```solidity
+// ❌ BIASED: 256 values mapped to 100 buckets
+euint8 percent = FHE.rem(FHE.randEuint8(), 100);
+
+// ✅ BETTER: Use larger source type
+euint32 percent = FHE.rem(FHE.randEuint32(), 100);
+```
+
+## Combining Randomness with Other Patterns
+
+### Random + Conditional Logic
+
+```solidity
+function randomReward() public {
+    euint32 roll = FHE.rem(FHE.randEuint32(), 100);
+    euint32 threshold = FHE.asEuint32(10);  // 10% chance
+
+    ebool isRare = FHE.lt(roll, threshold);
+    euint32 reward = FHE.select(isRare, FHE.asEuint32(1000), FHE.asEuint32(100));
+
+    _rewards[msg.sender] = FHE.add(_rewards[msg.sender], reward);
+    FHE.allowThis(_rewards[msg.sender]);
+}
+```
+
+### Random + Decryption
+
+```solidity
+contract RevealableRandom is ZamaEthereumConfig {
+    euint32 private _encryptedResult;
+    bool public revealed;
+
+    function generate() public {
+        _encryptedResult = FHE.rem(FHE.randEuint32(), 100);
+        FHE.allowThis(_encryptedResult);
+    }
+
+    function revealPublicly() public {
+        FHE.makePubliclyDecryptable(_encryptedResult);
+        revealed = true;
+    }
+}
+```
+
+## Summary
+
+| Concept | Details |
+|---------|---------|
+| **Synchronous** | Random values available in the same transaction |
+| **Encrypted** | Nobody can see the value until explicitly decrypted |
+| **Manipulation-proof** | Block producers, validators, MEV bots cannot exploit |
+| **ACL required** | Always call `FHE.allowThis()` and `FHE.allow()` after generation |
+| **Use smallest type** | `euint8` for small ranges, `euint64` only when needed |
+| **`FHE.rem(value, max)`** | Bound random to range [0, max) |
+| **Modulo bias** | Negligible when source type is much larger than the range |
+
+**Key principles:**
+1. FHE randomness is the strongest on-chain randomness — values are encrypted at creation
+2. Use `FHE.rem()` to bound values to a specific range
+3. Always set ACL permissions on generated random values
+4. Choose the smallest type that fits your use case for gas efficiency
+5. Operations on random values produce new ciphertexts — set ACL on the final result
+
+<Card title="Next Module" icon="arrow-right" href="/modules/10-frontend-integration">
+  Integrate FHEVM into your frontend application
+</Card>

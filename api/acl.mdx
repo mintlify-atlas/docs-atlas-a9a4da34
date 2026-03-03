@@ -1,0 +1,546 @@
+---
+title: Access Control (ACL)
+description: Complete reference for FHE Access Control Lists - allow, allowThis, allowTransient
+---
+
+## Overview
+
+Every encrypted value in fhEVM has an Access Control List (ACL) that determines which addresses can use that ciphertext. You **must** explicitly grant permissions for any address (including the contract itself) to use an encrypted value.
+
+## Import
+
+```solidity
+import { FHE, euint32 } from "@fhevm/solidity/lib/FHE.sol";
+```
+
+<Warning>
+  **CRITICAL**: After ANY operation that creates a new ciphertext, you MUST call `FHE.allowThis()` or the contract will not be able to use that value in future transactions.
+</Warning>
+
+---
+
+## Grant Persistent Permission
+
+### FHE.allow()
+
+Grant permission to an address to use an encrypted value. This permission is stored permanently on-chain.
+
+<ParamField path="ciphertext" type="euintXX | ebool | eaddress" required>
+  Encrypted value to grant access to
+</ParamField>
+
+<ParamField path="account" type="address" required>
+  Address to grant permission to
+</ParamField>
+
+**Signature**:
+```solidity
+function allow(euintXX ciphertext, address account)
+function allow(ebool ciphertext, address account)
+function allow(eaddress ciphertext, address account)
+```
+
+**Example**:
+```solidity
+contract ACLDemo is ZamaEthereumConfig {
+    mapping(address => euint32) private balances;
+    
+    function mint(address to, uint32 amount) external {
+        balances[to] = FHE.add(balances[to], amount);
+        
+        FHE.allowThis(balances[to]);    // Contract needs access
+        FHE.allow(balances[to], to);     // Owner needs access
+    }
+}
+```
+
+**When to Use**:
+- User needs to decrypt their balance
+- Another contract needs to access the value
+- Owner/admin needs to view encrypted data
+
+**Gas Cost**: ~40-50k gas per call
+
+---
+
+## Grant Contract Permission
+
+### FHE.allowThis()
+
+Grant permission to the contract itself. This is a shortcut for `FHE.allow(ciphertext, address(this))`.
+
+<ParamField path="ciphertext" type="euintXX | ebool | eaddress" required>
+  Encrypted value to grant contract access to
+</ParamField>
+
+**Signature**:
+```solidity
+function allowThis(euintXX ciphertext)
+function allowThis(ebool ciphertext)
+function allowThis(eaddress ciphertext)
+```
+
+**Example**:
+```solidity
+function increment() external {
+    counter = FHE.add(counter, 1);
+    FHE.allowThis(counter);  // REQUIRED: Contract must have access
+}
+```
+
+**When to Use**:
+- After EVERY operation that creates a new ciphertext
+- When storing encrypted values in contract storage
+- Before reading encrypted values in future transactions
+
+<Warning>
+  Forgetting `FHE.allowThis()` is the most common bug in FHE contracts. The contract will not be able to read the value in subsequent transactions.
+</Warning>
+
+**Gas Cost**: ~40-50k gas
+
+---
+
+## Grant Transient Permission
+
+### FHE.allowTransient()
+
+Grant temporary permission for the current transaction only. Permission is not stored and expires when the transaction ends.
+
+<ParamField path="ciphertext" type="euintXX | ebool | eaddress" required>
+  Encrypted value to grant temporary access to
+</ParamField>
+
+<ParamField path="account" type="address" required>
+  Address to grant temporary permission to
+</ParamField>
+
+**Signature**:
+```solidity
+function allowTransient(euintXX ciphertext, address account)
+function allowTransient(ebool ciphertext, address account)
+function allowTransient(eaddress ciphertext, address account)
+```
+
+**Example**:
+```solidity
+contract ACLDemo is ZamaEthereumConfig {
+    euint32 private secretValue;
+    
+    /// @notice Grant temporary access for a callback
+    function grantTransientAccess(address callback) external {
+        // Grant temporary permission
+        FHE.allowTransient(secretValue, callback);
+        
+        // Callback can use secretValue in this transaction
+        ICallback(callback).processSecret(secretValue);
+        
+        // Permission expires after transaction ends
+    }
+}
+```
+
+**When to Use**:
+- Cross-contract calls within the same transaction
+- Temporary delegation for callbacks
+- When permanent permission is not needed
+
+**Advantages**:
+- 30-40% cheaper than `FHE.allow()` (~25-35k gas)
+- No persistent storage writes
+- Automatic cleanup
+
+**Limitations**:
+- Permission expires at end of transaction
+- Recipient cannot use value in future transactions
+- Not suitable for user decryption (users need persistent permission)
+
+---
+
+## Check Permissions
+
+### FHE.isSenderAllowed()
+
+Check if `msg.sender` has permission to use an encrypted value.
+
+<ParamField path="ciphertext" type="euintXX | ebool | eaddress" required>
+  Encrypted value to check
+</ParamField>
+
+<ParamField path="returns" type="bool">
+  True if msg.sender has permission, false otherwise
+</ParamField>
+
+**Signature**:
+```solidity
+function isSenderAllowed(euintXX ciphertext) view returns (bool)
+function isSenderAllowed(ebool ciphertext) view returns (bool)
+function isSenderAllowed(eaddress ciphertext) view returns (bool)
+```
+
+**Example**:
+```solidity
+function getSecret() external view returns (euint32) {
+    require(FHE.isSenderAllowed(secretValue), "Access denied");
+    return secretValue;
+}
+```
+
+---
+
+### FHE.isAllowed()
+
+Check if a specific address has permission to use an encrypted value.
+
+<ParamField path="ciphertext" type="euintXX | ebool | eaddress" required>
+  Encrypted value to check
+</ParamField>
+
+<ParamField path="account" type="address" required>
+  Address to check permission for
+</ParamField>
+
+<ParamField path="returns" type="bool">
+  True if address has permission, false otherwise
+</ParamField>
+
+**Signature**:
+```solidity
+function isAllowed(euintXX ciphertext, address account) view returns (bool)
+function isAllowed(ebool ciphertext, address account) view returns (bool)
+function isAllowed(eaddress ciphertext, address account) view returns (bool)
+```
+
+**Example**:
+```solidity
+function canAccess(address user, euint64 value) public view returns (bool) {
+    return FHE.isAllowed(value, user);
+}
+```
+
+---
+
+## Check Initialization
+
+### FHE.isInitialized()
+
+Check if an encrypted value has been initialized (non-zero).
+
+<ParamField path="ciphertext" type="euintXX | ebool | eaddress" required>
+  Encrypted value to check
+</ParamField>
+
+<ParamField path="returns" type="bool">
+  True if initialized, false if zero/unset
+</ParamField>
+
+**Signature**:
+```solidity
+function isInitialized(euintXX ciphertext) view returns (bool)
+function isInitialized(ebool ciphertext) view returns (bool)
+function isInitialized(eaddress ciphertext) view returns (bool)
+```
+
+**Example**:
+```solidity
+function getBalance(address user) external view returns (euint64) {
+    require(FHE.isInitialized(balances[user]), "No balance set");
+    return balances[user];
+}
+```
+
+---
+
+## Common ACL Patterns
+
+### Pattern 1: Standard Operation ACL
+
+```solidity
+// After ANY FHE operation, always set ACL
+euint32 result = FHE.add(a, b);
+FHE.allowThis(result);           // Contract needs access
+FHE.allow(result, msg.sender);   // User needs access (optional)
+```
+
+---
+
+### Pattern 2: Transfer with ACL
+
+```solidity
+function transfer(address to, euint64 amount) external {
+    // Update balances
+    balances[msg.sender] = FHE.sub(balances[msg.sender], amount);
+    balances[to] = FHE.add(balances[to], amount);
+    
+    // Grant ACL to contract (REQUIRED)
+    FHE.allowThis(balances[msg.sender]);
+    FHE.allowThis(balances[to]);
+    
+    // Grant ACL to owners (for decryption)
+    FHE.allow(balances[msg.sender], msg.sender);
+    FHE.allow(balances[to], to);
+}
+```
+
+---
+
+### Pattern 3: Secure View Function
+
+```solidity
+function viewBalance(address user) external view returns (euint64) {
+    require(
+        msg.sender == user || msg.sender == owner,
+        "Not authorized"
+    );
+    require(
+        FHE.isSenderAllowed(balances[user]),
+        "No ACL permission"
+    );
+    return balances[user];
+}
+```
+
+---
+
+### Pattern 4: Admin-Controlled Access
+
+```solidity
+contract ACLDemo is ZamaEthereumConfig {
+    euint32 private secretValue;
+    address public owner;
+    
+    constructor() {
+        owner = msg.sender;
+    }
+    
+    function setSecret(uint32 value) external {
+        require(msg.sender == owner, "Not owner");
+        secretValue = FHE.asEuint32(value);
+        FHE.allowThis(secretValue);
+        FHE.allow(secretValue, owner);
+    }
+    
+    function grantAccess(address to) external {
+        require(msg.sender == owner, "Not owner");
+        FHE.allow(secretValue, to);
+    }
+    
+    function getSecret() external view returns (euint32) {
+        require(FHE.isSenderAllowed(secretValue), "No access");
+        return secretValue;
+    }
+}
+```
+
+---
+
+## Complete Example: Multi-User Vault
+
+```solidity
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import { FHE, euint64, externalEuint64 } from "@fhevm/solidity/lib/FHE.sol";
+import { ZamaEthereumConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
+
+contract MultiUserVault is ZamaEthereumConfig {
+    mapping(address => euint64) private balances;
+    
+    event Deposited(address indexed user);
+    event Withdrawn(address indexed user);
+    event AccessGranted(address indexed from, address indexed to);
+    
+    /// @notice Deposit encrypted amount
+    function deposit(externalEuint64 encAmount, bytes calldata inputProof) external {
+        euint64 amount = FHE.fromExternal(encAmount, inputProof);
+        
+        balances[msg.sender] = FHE.add(balances[msg.sender], amount);
+        
+        // ACL: Contract needs access for future operations
+        FHE.allowThis(balances[msg.sender]);
+        
+        // ACL: User needs access to view balance
+        FHE.allow(balances[msg.sender], msg.sender);
+        
+        emit Deposited(msg.sender);
+    }
+    
+    /// @notice Withdraw encrypted amount
+    function withdraw(externalEuint64 encAmount, bytes calldata inputProof) external {
+        euint64 amount = FHE.fromExternal(encAmount, inputProof);
+        
+        balances[msg.sender] = FHE.sub(balances[msg.sender], amount);
+        
+        FHE.allowThis(balances[msg.sender]);
+        FHE.allow(balances[msg.sender], msg.sender);
+        
+        emit Withdrawn(msg.sender);
+    }
+    
+    /// @notice Grant another address access to view your balance
+    function grantAccess(address to) external {
+        FHE.allow(balances[msg.sender], to);
+        emit AccessGranted(msg.sender, to);
+    }
+    
+    /// @notice View balance (ACL protected)
+    function getBalance(address user) external view returns (euint64) {
+        require(
+            FHE.isSenderAllowed(balances[user]),
+            "You don't have permission to view this balance"
+        );
+        return balances[user];
+    }
+    
+    /// @notice Check if you have access to view a balance
+    function canViewBalance(address user) external view returns (bool) {
+        return FHE.isAllowed(balances[user], msg.sender);
+    }
+}
+```
+
+---
+
+## ACL Best Practices
+
+### 1. Always Call `allowThis` After Operations
+
+```solidity
+// ❌ WRONG: Missing allowThis
+euint32 result = FHE.add(a, b);
+storedValue = result;  // Contract can't read this later!
+
+// ✅ CORRECT: Always call allowThis
+euint32 result = FHE.add(a, b);
+FHE.allowThis(result);
+storedValue = result;
+```
+
+### 2. Grant User Access for Decryption
+
+```solidity
+// ❌ WRONG: User can't decrypt
+balances[user] = FHE.add(balances[user], amount);
+FHE.allowThis(balances[user]);
+
+// ✅ CORRECT: Grant access to user
+balances[user] = FHE.add(balances[user], amount);
+FHE.allowThis(balances[user]);
+FHE.allow(balances[user], user);  // User can decrypt
+```
+
+### 3. Use Transient for Cross-Contract Calls
+
+```solidity
+// ❌ Expensive: Persistent permission not needed
+FHE.allow(tempValue, externalContract);
+
+// ✅ Cheaper: Transient permission for single transaction
+FHE.allowTransient(tempValue, externalContract);
+IExternal(externalContract).process(tempValue);
+```
+
+### 4. Check Permissions in View Functions
+
+```solidity
+// ❌ WRONG: Anyone can call
+function getBalance(address user) external view returns (euint64) {
+    return balances[user];  // ACL will fail on decryption
+}
+
+// ✅ CORRECT: Verify permission first
+function getBalance(address user) external view returns (euint64) {
+    require(FHE.isSenderAllowed(balances[user]), "No access");
+    return balances[user];
+}
+```
+
+### 5. Validate Initialization
+
+```solidity
+// ❌ WRONG: Uninitialized value
+euint64 balance = balances[newUser];  // Zero/uninitialized
+
+// ✅ CORRECT: Check first
+if (FHE.isInitialized(balances[user])) {
+    // Safe to use
+} else {
+    // Initialize first
+    balances[user] = FHE.asEuint64(0);
+    FHE.allowThis(balances[user]);
+}
+```
+
+---
+
+## Gas Costs
+
+| Operation | Gas Cost (Approximate) |
+|-----------|------------------------|
+| `FHE.allow()` | ~40-50k gas |
+| `FHE.allowThis()` | ~40-50k gas |
+| `FHE.allowTransient()` | ~25-35k gas (30% cheaper) |
+| `FHE.isSenderAllowed()` | ~3k gas (view) |
+| `FHE.isAllowed()` | ~3k gas (view) |
+| `FHE.isInitialized()` | ~3k gas (view) |
+
+---
+
+## Common Mistakes
+
+### Mistake 1: Forgetting `allowThis`
+
+```solidity
+// ❌ Contract can't read value later
+counter = FHE.add(counter, 1);
+
+// ✅ Correct
+counter = FHE.add(counter, 1);
+FHE.allowThis(counter);
+```
+
+### Mistake 2: Using `allow` for Contract Access
+
+```solidity
+// ❌ Verbose
+FHE.allow(value, address(this));
+
+// ✅ Use shortcut
+FHE.allowThis(value);
+```
+
+### Mistake 3: Permanent Permission for Temporary Use
+
+```solidity
+// ❌ Wasteful for single-transaction use
+FHE.allow(tempValue, callback);
+ICallback(callback).process(tempValue);
+
+// ✅ Use transient for callbacks
+FHE.allowTransient(tempValue, callback);
+ICallback(callback).process(tempValue);
+```
+
+---
+
+## Important Notes
+
+<Warning>
+  **CRITICAL**: `FHE.allowThis()` is required after EVERY operation. This is the most common source of bugs in FHE contracts.
+</Warning>
+
+<Info>
+  **ACL Storage**: `FHE.allow()` stores permissions permanently. `FHE.allowTransient()` uses transient storage (EIP-1153) and is 30% cheaper.
+</Info>
+
+<Tip>
+  **View Functions**: Always check `FHE.isSenderAllowed()` in view functions that return encrypted values.
+</Tip>
+
+---
+
+## Related
+
+- [Decryption](/api/decryption) - User decryption requires ACL permissions
+- [Input Conversion](/api/input-conversion) - Set ACL after `fromExternal`
+- [Gas Costs](/api/gas-costs) - ACL costs and optimization

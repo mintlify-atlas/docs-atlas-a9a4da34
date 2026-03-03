@@ -1,0 +1,289 @@
+---
+title: Quick start
+description: Get the FHEVM Bootcamp running in under 10 minutes
+---
+
+# Quick start guide
+
+Get up and running with the FHEVM Bootcamp in less than 10 minutes.
+
+## Prerequisites
+
+Before you begin, verify you have the required tools installed:
+
+| Requirement | Version |
+|-------------|----------|
+| Node.js | 20+ |
+| Git | 2.40+ |
+
+Verify your setup:
+
+```bash
+node --version   # v20.x or higher
+git --version    # 2.40+
+```
+
+<Note>
+If you don't have Node.js 20+, download it from [nodejs.org](https://nodejs.org/)
+</Note>
+
+## Setup (3 minutes)
+
+<Steps>
+  <Step title="Clone the repository">
+    ```bash
+    git clone https://github.com/Himess/fhevm-bootcamp.git
+    cd fhevm-bootcamp
+    ```
+  </Step>
+
+  <Step title="Install dependencies">
+    ```bash
+    npm install
+    ```
+
+    This will install all required packages including:
+    - `@fhevm/solidity` - FHE Solidity library
+    - `@fhevm/hardhat-plugin` - Hardhat integration
+    - `hardhat` - Development framework
+  </Step>
+
+  <Step title="Compile contracts">
+    ```bash
+    npx hardhat compile
+    ```
+
+    Expected output:
+    ```
+    Generating typings for: 35 artifacts in dir: types for target: ethers-v6
+    Successfully generated 70 typings!
+    Compiled 35 Solidity files successfully
+    ```
+  </Step>
+</Steps>
+
+## Run tests (2 minutes)
+
+All 328 tests run locally in mock FHE mode—no testnet connection needed:
+
+```bash
+npm test
+```
+
+Expected output:
+
+```
+  SimpleStorage
+    ✓ should store and retrieve a value
+    ✓ should emit ValueChanged event
+  ...
+
+  328 passing (Xs)
+```
+
+<Note>
+To run tests with gas reporting:
+
+```bash
+npm run test:gas
+```
+</Note>
+
+## Deploy to Sepolia (5 minutes)
+
+Optional: Deploy contracts to Ethereum Sepolia testnet.
+
+<Steps>
+  <Step title="Configure environment">
+    Copy the example environment file:
+
+    ```bash
+    cp .env.example .env
+    ```
+
+    Edit `.env` and add your private key:
+
+    ```bash .env
+    PRIVATE_KEY=your_private_key_without_0x_prefix
+    SEPOLIA_RPC_URL=https://ethereum-sepolia-rpc.publicnode.com
+    ```
+
+    <Warning>
+    You need Sepolia ETH. Get some from the [Alchemy Sepolia Faucet](https://www.alchemy.com/faucets/ethereum-sepolia)
+    </Warning>
+  </Step>
+
+  <Step title="Deploy contracts">
+    ```bash
+    npm run deploy:sepolia
+    ```
+
+    Expected output:
+    ```
+    ============================================================
+    FHEVM Bootcamp - Sepolia Deployment
+    ============================================================
+    Deployer: 0xYourAddress
+    Balance: 0.5 ETH
+
+    [Module 00] Deploying SimpleStorage...
+      deployed: 0x...
+
+    [Module 02] Deploying HelloFHEVM...
+      deployed: 0x...
+
+    ...
+    Total: 11/11 deployed
+    ```
+  </Step>
+
+  <Step title="Verify on Etherscan (optional)">
+    ```bash
+    npx hardhat verify --network sepolia <CONTRACT_ADDRESS>
+    ```
+  </Step>
+</Steps>
+
+## Explore the curriculum
+
+The bootcamp has **20 modules** across 4 weeks. Start based on your experience:
+
+<CardGroup cols={2}>
+  <Card title="New to Solidity" icon="user">
+    Start with **Module 00: Prerequisites & Solidity Review** in `modules/00-prerequisites/`
+  </Card>
+  <Card title="Know Solidity, new to FHE" icon="graduation-cap">
+    Start with **Module 01: Introduction to FHE** in `modules/01-intro-to-fhe/`
+  </Card>
+  <Card title="Know FHE basics" icon="bolt">
+    Start with **Module 04: Operations** in `modules/04-operations/`
+  </Card>
+  <Card title="Want to build apps" icon="code">
+    Start with **Module 11: Confidential ERC-20** in `modules/11-project-erc20/`
+  </Card>
+</CardGroup>
+
+### Module structure
+
+Each module folder contains:
+
+```
+modules/XX-module-name/
+  README.md        # Overview and learning objectives
+  lesson.md        # Full lesson content
+  slides/slides.md # Presentation slides (Marp format)
+  exercise.md      # Hands-on exercises
+  quiz.md          # Knowledge check
+```
+
+Matching contracts live in `contracts/`, tests in `test/`, exercises in `exercises/`, and solutions in `solutions/`.
+
+## Key commands
+
+| Command | Description |
+|---------|-------------|
+| `npm test` | Run all 328 tests (mock FHE mode) |
+| `npm run test:gas` | Run tests with gas usage report |
+| `npm run compile` | Compile all Solidity contracts |
+| `npm run clean` | Remove artifacts, cache, types |
+| `npm run build` | Clean + compile from scratch |
+| `npm run deploy:local` | Deploy to local Hardhat network |
+| `npm run deploy:sepolia` | Deploy to Ethereum Sepolia testnet |
+| `npm run lint` | Lint Solidity files |
+| `npm run format` | Check formatting |
+| `npm run format:fix` | Auto-fix formatting |
+
+## Docker (alternative setup)
+
+If you prefer a containerized environment, no local Node.js installation needed:
+
+```bash
+# Run all tests (one command)
+docker compose up
+
+# Run with build output visible
+docker compose up --build
+
+# Run interactively
+docker compose run --rm bootcamp sh
+```
+
+Inside the container you can run any command:
+
+```bash
+npx hardhat compile
+npm test
+npm run deploy:sepolia   # after configuring .env
+```
+
+## Key resources
+
+| Resource | Path |
+|----------|------|
+| Cheatsheet | `resources/CHEATSHEET.md` |
+| Common pitfalls | `resources/COMMON_PITFALLS.md` |
+| Gas guide | `resources/GAS_GUIDE.md` |
+| Security checklist | `resources/SECURITY_CHECKLIST.md` |
+| Glossary | `resources/GLOSSARY.md` |
+| Full syllabus | `curriculum/SYLLABUS.md` |
+| Instructor guide | `curriculum/INSTRUCTOR_GUIDE.md` |
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="npm install fails">
+    Delete `node_modules/` and `package-lock.json`, then run `npm install` again:
+
+    ```bash
+    rm -rf node_modules package-lock.json
+    npm install
+    ```
+  </Accordion>
+
+  <Accordion title="Compile errors">
+    Run `npm run clean` then `npm run compile`:
+
+    ```bash
+    npm run clean
+    npm run compile
+    ```
+  </Accordion>
+
+  <Accordion title="Tests timeout">
+    Increase mocha timeout:
+
+    ```bash
+    npx hardhat test --timeout 60000
+    ```
+  </Accordion>
+
+  <Accordion title="Sepolia deploy fails">
+    Check that:
+    1. Your `.env` has the correct `PRIVATE_KEY` (without `0x` prefix)
+    2. You have Sepolia ETH in your account
+    3. Your RPC URL is valid
+  </Accordion>
+
+  <Accordion title="TypeScript errors">
+    Regenerate type bindings:
+
+    ```bash
+    npm run build
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Full installation guide" icon="wrench" href="/installation">
+    Detailed setup instructions and environment configuration
+  </Card>
+  <Card title="Curriculum overview" icon="book" href="/curriculum-overview">
+    Explore the complete 4-week program
+  </Card>
+</CardGroup>
+
+<Note>
+Join the [Zama Community](https://community.zama.ai) to connect with other learners and get help from the community.
+</Note>

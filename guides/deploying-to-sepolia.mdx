@@ -1,0 +1,445 @@
+---
+title: Deploying to Sepolia Testnet
+description: Step-by-step guide to deploying fhEVM contracts to Ethereum Sepolia testnet
+---
+
+# Deploying to Sepolia Testnet
+
+This guide walks you through deploying your fhEVM contracts to the Ethereum Sepolia testnet, where they can interact with Zama's fhEVM coprocessor.
+
+## Prerequisites
+
+<Steps>
+  <Step title="Get Sepolia ETH">
+    You'll need Sepolia ETH for gas fees. Get free testnet ETH from:
+
+    - [Sepolia Faucet](https://sepoliafaucet.com)
+    - [Alchemy Sepolia Faucet](https://sepoliafaucet.com)
+    - [Infura Sepolia Faucet](https://www.infura.io/faucet/sepolia)
+
+    Recommended: At least 0.5 ETH for deploying multiple contracts.
+  </Step>
+
+  <Step title="Set up environment variables">
+    Create a `.env` file in your project root:
+
+    ```bash .env
+    PRIVATE_KEY=your_private_key_without_0x_prefix
+    SEPOLIA_RPC_URL=https://ethereum-sepolia-rpc.publicnode.com
+    ETHERSCAN_API_KEY=your_etherscan_api_key_optional
+    ```
+
+    <Warning>
+    Never commit your `.env` file to git. Add it to `.gitignore`.
+    </Warning>
+  </Step>
+
+  <Step title="Configure Hardhat for Sepolia">
+    Update your `hardhat.config.ts`:
+
+    ```typescript hardhat.config.ts
+    import "@nomicfoundation/hardhat-ethers";
+    import "@nomicfoundation/hardhat-verify";
+    import "@fhevm/hardhat-plugin";
+    import type { HardhatUserConfig } from "hardhat/config";
+    import dotenv from "dotenv";
+
+    dotenv.config();
+
+    const config: HardhatUserConfig = {
+      networks: {
+        sepolia: {
+          url: process.env.SEPOLIA_RPC_URL || "https://ethereum-sepolia-rpc.publicnode.com",
+          accounts: process.env.PRIVATE_KEY ? [`0x${process.env.PRIVATE_KEY}`] : [],
+          chainId: 11155111,
+        },
+      },
+      solidity: {
+        version: "0.8.27",
+        settings: {
+          optimizer: {
+            enabled: true,
+            runs: 800,
+          },
+          evmVersion: "cancun",
+        },
+      },
+      etherscan: {
+        apiKey: process.env.ETHERSCAN_API_KEY || "",
+      },
+    };
+
+    export default config;
+    ```
+  </Step>
+</Steps>
+
+## Deployment Script
+
+Create a deployment script at `scripts/deploy-sepolia.ts`:
+
+```typescript scripts/deploy-sepolia.ts
+import { ethers } from "hardhat";
+
+async function main() {
+  const [deployer] = await ethers.getSigners();
+  console.log("=".repeat(60));
+  console.log("FHEVM Bootcamp - Sepolia Deployment");
+  console.log("=".repeat(60));
+  console.log("Deployer:", deployer.address);
+
+  const balance = await deployer.provider.getBalance(deployer.address);
+  console.log("Balance:", ethers.formatEther(balance), "ETH");
+  console.log("");
+
+  // Deploy your contracts
+  const contracts: { name: string; args?: any[]; module: string }[] = [
+    { name: "SimpleStorage", module: "00" },
+    { name: "HelloFHEVM", module: "02" },
+    { name: "EncryptedTypes", module: "03" },
+    { name: "ArithmeticOps", module: "04" },
+    { name: "ACLDemo", module: "05" },
+    { name: "ConditionalDemo", module: "08" },
+    { name: "RandomDemo", module: "09" },
+    { name: "ConfidentialERC20", args: ["ConfToken", "CFT"], module: "11" },
+    { name: "ConfidentialVoting", module: "12" },
+    { name: "SealedBidAuction", module: "13" },
+  ];
+
+  const deployed: Record<string, string> = {};
+  const txHashes: Record<string, string> = {};
+
+  for (const { name, args, module } of contracts) {
+    try {
+      console.log(`[Module ${module}] Deploying ${name}...`);
+      const Factory = await ethers.getContractFactory(name);
+      const contract = args ? await Factory.deploy(...args) : await Factory.deploy();
+      const tx = contract.deploymentTransaction();
+      console.log(`  tx: ${tx?.hash}`);
+
+      await contract.waitForDeployment();
+      const address = await contract.getAddress();
+      deployed[name] = address;
+      if (tx?.hash) txHashes[name] = tx.hash;
+      console.log(`  deployed: ${address}`);
+      console.log("");
+    } catch (error: any) {
+      console.error(`  FAILED: ${error.message.slice(0, 200)}`);
+      console.log("");
+    }
+  }
+
+  // Print summary
+  console.log("=".repeat(60));
+  console.log("DEPLOYMENT SUMMARY");
+  console.log("=".repeat(60));
+  console.log(`Network: Ethereum Sepolia (chainId: 11155111)`);
+  console.log(`Deployer: ${deployer.address}`);
+  console.log("");
+
+  console.log("| Contract | Address | Tx Hash |");
+  console.log("|----------|---------|---------||");
+  for (const [name, address] of Object.entries(deployed)) {
+    const txHash = txHashes[name] || "N/A";
+    const shortAddr = `${address.slice(0, 6)}...${address.slice(-4)}`;
+    const shortTx = txHash !== "N/A" ? `${txHash.slice(0, 10)}...` : "N/A";
+    console.log(`| ${name} | ${shortAddr} | ${shortTx} |`);
+  }
+
+  console.log(`\nTotal: ${Object.keys(deployed).length}/${contracts.length} deployed`);
+
+  const balanceAfter = await deployer.provider.getBalance(deployer.address);
+  const gasUsed = balance - balanceAfter;
+  console.log(`Gas spent: ${ethers.formatEther(gasUsed)} ETH`);
+  console.log(`Remaining balance: ${ethers.formatEther(balanceAfter)} ETH`);
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+```
+
+## Deploy Your Contracts
+
+<Steps>
+  <Step title="Run the deployment script">
+    ```bash
+    npx hardhat run scripts/deploy-sepolia.ts --network sepolia
+    ```
+
+    You'll see output like:
+
+    ```
+    ============================================================
+    FHEVM Bootcamp - Sepolia Deployment
+    ============================================================
+    Deployer: 0xF505e2E71df58D7244189072008f25f6b6aaE5ae
+    Balance: 1.234567890123456789 ETH
+
+    [Module 00] Deploying SimpleStorage...
+      tx: 0x1234567890abcdef...
+      deployed: 0x8B7D25a45890d214db56790ae59afaE72273c1D3
+
+    [Module 02] Deploying HelloFHEVM...
+      tx: 0xabcdef1234567890...
+      deployed: 0xbFd008661B7222Dd974074f986D1eb18dD4dF1F1
+    ...
+    ```
+  </Step>
+
+  <Step title="Save the deployed addresses">
+    Create a file to store your deployed contract addresses:
+
+    ```json deployments/sepolia.json
+    {
+      "SimpleStorage": "0x8B7D25a45890d214db56790ae59afaE72273c1D3",
+      "HelloFHEVM": "0xbFd008661B7222Dd974074f986D1eb18dD4dF1F1",
+      "EncryptedTypes": "0x56c52A3b621346DC47B7B2A4bE0230721EE48c12",
+      "ConfidentialERC20": "0x623b1653AB004661BC7832AC2930Eb42607C4013"
+    }
+    ```
+  </Step>
+
+  <Step title="Verify on Etherscan (optional)">
+    If you added an Etherscan API key:
+
+    ```bash
+    npx hardhat verify --network sepolia 0x8B7D25a45890d214db56790ae59afaE72273c1D3
+
+    # For contracts with constructor arguments:
+    npx hardhat verify --network sepolia 0x623b1653AB004661BC7832AC2930Eb42607C4013 "ConfToken" "CFT"
+    ```
+  </Step>
+</Steps>
+
+## Deploy All Contracts
+
+For a complete deployment of all bootcamp contracts, use the comprehensive script:
+
+```typescript scripts/deploy-all.ts
+import { ethers } from "hardhat";
+
+async function main() {
+  const [deployer] = await ethers.getSigners();
+  console.log("=".repeat(60));
+  console.log("FHEVM Bootcamp — Full Deployment (35 contracts)");
+  console.log("=".repeat(60));
+  console.log("Deployer:", deployer.address);
+
+  const balance = await deployer.provider.getBalance(deployer.address);
+  console.log("Balance:", ethers.formatEther(balance), "ETH\n");
+
+  const contracts: { name: string; args?: any[]; module: string }[] = [
+    // Phase 1 — Foundation (00-03)
+    { name: "SimpleStorage", module: "00" },
+    { name: "BasicToken", args: ["BootcampToken", "BCT", 18], module: "00" },
+    { name: "HelloFHEVM", module: "02" },
+    { name: "EncryptedTypes", module: "03" },
+    { name: "TypeConversions", module: "03" },
+
+    // Phase 2 — Core (04-09)
+    { name: "ArithmeticOps", module: "04" },
+    { name: "BitwiseOps", module: "04" },
+    { name: "ComparisonOps", module: "04" },
+    { name: "ACLDemo", module: "05" },
+    { name: "MultiUserVault", module: "05" },
+    { name: "SecureInput", module: "06" },
+    { name: "PublicDecrypt", module: "07" },
+    { name: "UserDecrypt", module: "07" },
+    { name: "ConditionalDemo", module: "08" },
+    { name: "EncryptedMinMax", module: "08" },
+    { name: "RandomDemo", module: "09" },
+
+    // Phase 3 — Applications (10-13)
+    { name: "SimpleCounter", module: "10" },
+    { name: "ConfidentialERC20", args: ["ConfToken", "CFT"], module: "11" },
+    { name: "ConfidentialVoting", module: "12" },
+    { name: "PrivateVoting", args: [3], module: "12" },
+    { name: "SealedBidAuction", module: "13" },
+    { name: "RevealableAuction", module: "13" },
+    { name: "EncryptedMarketplace", module: "13" },
+    { name: "EncryptedLottery", args: [ethers.parseEther("0.001"), 3600], module: "09" },
+
+    // Phase 4 — Mastery (14-18)
+    { name: "TestableVault", module: "14" },
+    { name: "GasOptimized", module: "15" },
+    { name: "GasBenchmark", module: "15" },
+    { name: "SecurityPatterns", args: [5, 10], module: "16" },
+    { name: "VulnerableDemo", module: "16" },
+    { name: "EncryptedStateMachine", module: "17" },
+    { name: "LastErrorPattern", args: ["ErrorToken", "ERR"], module: "17" },
+    { name: "EncryptedRegistry", module: "17" },
+    { name: "ConfidentialLending", module: "18" },
+    { name: "EncryptedOrderBook", module: "18" },
+
+    // Phase 5 — Capstone (19)
+    { name: "ConfidentialDAO", args: ["BootcampDAO"], module: "19" },
+  ];
+
+  const deployed: Record<string, { address: string; txHash: string; module: string }> = {};
+  let failed = 0;
+
+  for (const { name, args, module: mod } of contracts) {
+    try {
+      process.stdout.write(`[Module ${mod}] ${name}...`);
+      const Factory = await ethers.getContractFactory(name);
+      const contract = args ? await Factory.deploy(...args) : await Factory.deploy();
+      const tx = contract.deploymentTransaction();
+      await contract.waitForDeployment();
+      const address = await contract.getAddress();
+      deployed[name] = { address, txHash: tx?.hash || "", module: mod };
+      console.log(` ${address}`);
+    } catch (error: any) {
+      console.log(` FAILED: ${error.message.slice(0, 120)}`);
+      failed++;
+    }
+  }
+
+  // Summary
+  console.log("\n" + "=".repeat(60));
+  console.log("DEPLOYMENT SUMMARY");
+  console.log("=".repeat(60));
+  console.log(`Network: Ethereum Sepolia (chainId: 11155111)`);
+  console.log(`Deployer: ${deployer.address}\n`);
+
+  console.log("| Contract | Module | Address |");
+  console.log("|----------|--------|---------||");
+  for (const [name, info] of Object.entries(deployed)) {
+    console.log(`| ${name} | ${info.module} | \`${info.address}\` |`);
+  }
+
+  const balanceAfter = await deployer.provider.getBalance(deployer.address);
+  const gasSpent = balance - balanceAfter;
+  console.log(`\nDeployed: ${Object.keys(deployed).length}/${contracts.length} (${failed} failed)`);
+  console.log(`Gas spent: ${ethers.formatEther(gasSpent)} ETH`);
+  console.log(`Remaining: ${ethers.formatEther(balanceAfter)} ETH`);
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+```
+
+Run it with:
+
+```bash
+npx hardhat run scripts/deploy-all.ts --network sepolia
+```
+
+## Network Information
+
+### Ethereum Sepolia
+
+- **Chain ID:** 11155111
+- **RPC URL:** https://ethereum-sepolia-rpc.publicnode.com
+- **Block Explorer:** https://sepolia.etherscan.io
+
+### Zama fhEVM Coprocessor Addresses
+
+These are automatically configured by `@fhevm/solidity`:
+
+- **ACL Contract:** `0xf0Ffdc93b7E186bC2f8CB3dAA75D86d1930A433D`
+- **KMS Contract:** `0xbE0E383937d564D7FF0BC3b46c51f0bF8d5C311A`
+- **Input Verifier:** `0xBBC1fFCdc7C316aAAd72E807D9b0272BE8F84DA0`
+- **Gateway Chain ID:** 10901
+
+## Post-Deployment Testing
+
+After deployment, verify your contracts work on-chain:
+
+### Test with Hardhat Console
+
+```bash
+npx hardhat console --network sepolia
+```
+
+```javascript
+const SimpleStorage = await ethers.getContractFactory("SimpleStorage");
+const storage = SimpleStorage.attach("0x8B7D25a45890d214db56790ae59afaE72273c1D3");
+
+// Set a value
+await (await storage.set(42)).wait();
+
+// Read it back
+const value = await storage.get();
+console.log("Value:", value.toString()); // "42"
+```
+
+### Verify FHE Operations
+
+For FHE contracts, you'll need to use the Relayer SDK from a frontend. See the [Frontend Integration guide](/guides/frontend-integration).
+
+## Troubleshooting
+
+<Accordion title="Deployment fails with 'insufficient funds'">
+**Cause:** Not enough Sepolia ETH for gas fees.
+
+**Solution:** Get more testnet ETH from a faucet. Each deployment costs approximately:
+- Simple contracts: ~0.001-0.005 ETH
+- Complex FHE contracts: ~0.01-0.03 ETH
+- Full 35-contract deployment: ~0.3-0.5 ETH
+</Accordion>
+
+<Accordion title="Deployment succeeds but contract doesn't work">
+**Cause:** Contract may not be inheriting from `ZamaEthereumConfig`.
+
+**Solution:** Ensure your FHE contracts inherit from the correct config:
+
+```solidity
+import {ZamaEthereumConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
+
+contract MyContract is ZamaEthereumConfig {
+  // ...
+}
+```
+</Accordion>
+
+<Accordion title="Transaction reverts with 'invalid proof'">
+**Cause:** Encrypted input was created for the wrong network or contract address.
+
+**Solution:** Ensure frontend uses the correct:
+- Contract address (from your deployment)
+- Chain ID (11155111 for Sepolia)
+- Relayer URL (`https://gateway.zama.ai`)
+</Accordion>
+
+<Accordion title="Etherscan verification fails">
+**Cause:** Constructor arguments not provided correctly.
+
+**Solution:** For contracts with constructor args, provide them in order:
+
+```bash
+npx hardhat verify --network sepolia \
+  0x623b1653AB004661BC7832AC2930Eb42607C4013 \
+  "ConfToken" "CFT"
+```
+</Accordion>
+
+## Cost Estimation
+
+Based on on-chain deployment data:
+
+| Contract Type | Approx. Gas Cost | At 50 gwei |
+|--------------|------------------|------------|
+| SimpleStorage | ~200,000 | ~0.01 ETH |
+| HelloFHEVM | ~1,500,000 | ~0.075 ETH |
+| ConfidentialERC20 | ~2,000,000 | ~0.10 ETH |
+| SealedBidAuction | ~2,500,000 | ~0.125 ETH |
+| ConfidentialDAO | ~3,000,000 | ~0.15 ETH |
+
+<Note>
+Gas costs vary based on network congestion. Check current gas prices at [Sepolia Gas Tracker](https://sepolia.etherscan.io/gastracker).
+</Note>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Frontend Integration" icon="browser" href="/guides/frontend-integration">
+    Connect a React frontend to your deployed contracts
+  </Card>
+  <Card title="Testing FHE Contracts" icon="flask" href="/guides/testing-fhe-contracts">
+    Write comprehensive tests before deploying
+  </Card>
+</CardGroup>

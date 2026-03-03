@@ -1,0 +1,450 @@
+---
+title: Installation
+description: Detailed installation instructions for your FHEVM development environment
+---
+
+# Installation
+
+This guide provides detailed instructions for setting up your FHEVM development environment.
+
+## System requirements
+
+### Required software
+
+| Requirement | Minimum version | Recommended |
+|-------------|-----------------|-------------|
+| Node.js | 20+ | Latest LTS |
+| npm / pnpm | 10+ / 9+ | Latest |
+| Git | 2.40+ | Latest |
+| Solidity knowledge | Intermediate | - |
+| Hardhat or Foundry | Latest | Hardhat 2.28+ |
+
+### Operating systems
+
+- macOS 12+ (Monterey or later)
+- Linux (Ubuntu 20.04+, Debian 11+, or equivalent)
+- Windows 10/11 with WSL2 (Ubuntu 20.04+ recommended)
+
+<Warning>
+Native Windows is not recommended. Use WSL2 with Ubuntu for best compatibility.
+</Warning>
+
+## Step-by-step installation
+
+### 1. Install Node.js
+
+<CodeGroup>
+```bash macOS (Homebrew)
+brew install node@20
+```
+
+```bash Linux (NodeSource)
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt-get install -y nodejs
+```
+
+```bash Windows (WSL2)
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt-get install -y nodejs
+```
+</CodeGroup>
+
+Verify installation:
+
+```bash
+node --version  # Should output v20.x.x or higher
+npm --version   # Should output 10.x.x or higher
+```
+
+### 2. Install Git
+
+<CodeGroup>
+```bash macOS (Homebrew)
+brew install git
+```
+
+```bash Linux
+sudo apt-get update
+sudo apt-get install -y git
+```
+
+```bash Windows (WSL2)
+sudo apt-get update
+sudo apt-get install -y git
+```
+</CodeGroup>
+
+Verify installation:
+
+```bash
+git --version  # Should output 2.40+ or higher
+```
+
+### 3. Clone the repository
+
+```bash
+git clone https://github.com/Himess/fhevm-bootcamp.git
+cd fhevm-bootcamp
+```
+
+### 4. Install dependencies
+
+```bash
+npm install
+```
+
+This installs all required packages:
+
+**Core dependencies:**
+- `@fhevm/solidity` (v0.10.0) - FHE Solidity library
+- `@fhevm/mock-utils` (v0.4.0) - Testing utilities
+
+**Development dependencies:**
+- `@fhevm/hardhat-plugin` (v0.4.0) - Hardhat integration
+- `hardhat` (v2.28.5) - Development framework
+- `@nomicfoundation/hardhat-ethers` - Ethers.js integration
+- `@typechain/hardhat` - TypeScript bindings generator
+- `hardhat-gas-reporter` - Gas usage analysis
+
+<Note>
+The `postinstall` script will automatically patch the fhEVM plugin. This is normal.
+</Note>
+
+### 5. Compile contracts
+
+```bash
+npx hardhat compile
+```
+
+Expected output:
+
+```
+Generating typings for: 35 artifacts in dir: types for target: ethers-v6
+Successfully generated 70 typings!
+Compiled 35 Solidity files successfully
+```
+
+This compiles all 35 contracts and generates TypeScript type bindings.
+
+### 6. Run tests
+
+```bash
+npm test
+```
+
+Expected output:
+
+```
+  SimpleStorage
+    ✓ should store and retrieve a value
+    ✓ should emit ValueChanged event
+
+  BasicToken
+    ✓ should have correct initial supply
+    ✓ should transfer tokens
+
+  ...
+
+  328 passing (Xs)
+```
+
+<Note>
+All 328 tests run locally in mock FHE mode. No testnet connection is needed.
+</Note>
+
+## Environment configuration
+
+### Local development
+
+For local development, no environment configuration is needed. The Hardhat network runs in mock FHE mode by default.
+
+### Sepolia testnet deployment
+
+<Steps>
+  <Step title="Create environment file">
+    ```bash
+    cp .env.example .env
+    ```
+  </Step>
+
+  <Step title="Add your private key">
+    Edit `.env` and add your private key:
+
+    ```bash .env
+    PRIVATE_KEY=your_private_key_without_0x_prefix
+    SEPOLIA_RPC_URL=https://ethereum-sepolia-rpc.publicnode.com
+    ```
+
+    <Warning>
+    Never commit your `.env` file or share your private key. The `.gitignore` file is configured to exclude `.env`.
+    </Warning>
+  </Step>
+
+  <Step title="Get Sepolia ETH">
+    You need Sepolia ETH to deploy contracts. Get some from:
+
+    - [Alchemy Sepolia Faucet](https://www.alchemy.com/faucets/ethereum-sepolia)
+    - [Infura Sepolia Faucet](https://www.infura.io/faucet/sepolia)
+    - [QuickNode Sepolia Faucet](https://faucet.quicknode.com/ethereum/sepolia)
+  </Step>
+
+  <Step title="Test deployment">
+    ```bash
+    npm run deploy:sepolia
+    ```
+
+    This will deploy all contracts to Sepolia testnet.
+  </Step>
+</Steps>
+
+## Project structure
+
+After installation, your project structure will look like this:
+
+```
+fhevm-bootcamp/
+├── contracts/              # 35 Solidity contracts
+│   ├── SimpleStorage.sol   # Module 00
+│   ├── HelloFHEVM.sol      # Module 02
+│   ├── ConfidentialERC20.sol
+│   └── ...
+├── test/                   # 35 test files (328 tests)
+├── modules/                # 20 learning modules
+│   ├── 00-prerequisites/
+│   ├── 01-intro-to-fhe/
+│   └── ...
+├── curriculum/
+│   ├── SYLLABUS.md
+│   ├── LEARNING_PATHS.md
+│   └── HOMEWORK.md
+├── resources/
+│   ├── CHEATSHEET.md
+│   ├── COMMON_PITFALLS.md
+│   ├── GAS_GUIDE.md
+│   └── SECURITY_CHECKLIST.md
+├── exercises/              # Starter templates
+├── solutions/              # Complete solutions
+├── scripts/
+│   ├── deploy-all.ts
+│   └── deploy-sepolia.ts
+├── hardhat.config.ts
+├── package.json
+└── tsconfig.json
+```
+
+## Docker installation (alternative)
+
+If you prefer a containerized environment:
+
+### Prerequisites
+
+- Docker Desktop 4.0+ (macOS/Windows)
+- Docker Engine 20.10+ (Linux)
+- Docker Compose 2.0+
+
+### Setup
+
+<Steps>
+  <Step title="Clone repository">
+    ```bash
+    git clone https://github.com/Himess/fhevm-bootcamp.git
+    cd fhevm-bootcamp
+    ```
+  </Step>
+
+  <Step title="Run tests">
+    ```bash
+    docker compose up
+    ```
+
+    This will:
+    1. Build the Docker image
+    2. Install all dependencies
+    3. Compile contracts
+    4. Run all 328 tests
+  </Step>
+
+  <Step title="Interactive shell">
+    For interactive development:
+
+    ```bash
+    docker compose run --rm bootcamp sh
+    ```
+
+    Inside the container:
+
+    ```bash
+    npx hardhat compile
+    npm test
+    npm run deploy:local
+    ```
+  </Step>
+</Steps>
+
+## Verify installation
+
+Run this checklist to verify your installation is complete:
+
+<Steps>
+  <Step title="Node.js version">
+    ```bash
+    node --version
+    ```
+    Should output `v20.x.x` or higher
+  </Step>
+
+  <Step title="Dependencies installed">
+    ```bash
+    npm list @fhevm/solidity @fhevm/hardhat-plugin
+    ```
+    Should show both packages installed
+  </Step>
+
+  <Step title="Contracts compiled">
+    ```bash
+    ls -la artifacts/contracts/
+    ```
+    Should show compiled contract artifacts
+  </Step>
+
+  <Step title="Tests passing">
+    ```bash
+    npm test
+    ```
+    Should show "328 passing"
+  </Step>
+
+  <Step title="TypeScript types generated">
+    ```bash
+    ls -la types/
+    ```
+    Should show generated TypeScript types
+  </Step>
+</Steps>
+
+<Note>
+If all checks pass, your installation is complete and you're ready to start the bootcamp!
+</Note>
+
+## IDE setup
+
+### Visual Studio Code (recommended)
+
+<Steps>
+  <Step title="Install VS Code">
+    Download from [code.visualstudio.com](https://code.visualstudio.com/)
+  </Step>
+
+  <Step title="Install recommended extensions">
+    - [Solidity](https://marketplace.visualstudio.com/items?itemName=NomicFoundation.hardhat-solidity) by Nomic Foundation
+    - [Hardhat](https://marketplace.visualstudio.com/items?itemName=NomicFoundation.hardhat-solidity)
+    - [Prettier](https://marketplace.visualstudio.com/items?itemName=esbenp.prettier-vscode)
+    - [ESLint](https://marketplace.visualstudio.com/items?itemName=dbaeumer.vscode-eslint)
+  </Step>
+
+  <Step title="Open project">
+    ```bash
+    code .
+    ```
+  </Step>
+</Steps>
+
+### IntelliJ IDEA / WebStorm
+
+<Steps>
+  <Step title="Install Solidity plugin">
+    Go to Settings → Plugins → Search for "Solidity" → Install
+  </Step>
+
+  <Step title="Enable Prettier">
+    Go to Settings → Languages & Frameworks → JavaScript → Prettier
+    Enable "On save" formatting
+  </Step>
+
+  <Step title="Open project">
+    File → Open → Select `fhevm-bootcamp` directory
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+### Node.js version issues
+
+If you have an older Node.js version, use `nvm` to manage versions:
+
+```bash
+# Install nvm
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
+
+# Install Node.js 20
+nvm install 20
+nvm use 20
+```
+
+### Compilation errors
+
+If compilation fails:
+
+```bash
+# Clean and rebuild
+npm run clean
+npm run compile
+```
+
+### Missing dependencies
+
+If you see "Cannot find module" errors:
+
+```bash
+# Reinstall dependencies
+rm -rf node_modules package-lock.json
+npm install
+```
+
+### Permission errors (Linux/macOS)
+
+If you get EACCES errors:
+
+```bash
+# Fix npm permissions
+mkdir ~/.npm-global
+npm config set prefix '~/.npm-global'
+echo 'export PATH=~/.npm-global/bin:$PATH' >> ~/.bashrc
+source ~/.bashrc
+```
+
+### WSL2 performance issues
+
+For better performance on WSL2:
+
+1. Store the project in the Linux filesystem (`~/projects`), not Windows (`/mnt/c/`)
+2. Run `wsl --update` to get the latest WSL2 version
+3. Allocate more memory to WSL2 in `.wslconfig`:
+
+```ini .wslconfig
+[wsl2]
+memory=8GB
+processors=4
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quick start" icon="rocket" href="/quick-start">
+    Get up and running in 10 minutes
+  </Card>
+  <Card title="Curriculum overview" icon="book" href="/curriculum-overview">
+    Explore the 4-week program structure
+  </Card>
+</CardGroup>
+
+## Additional resources
+
+- [Hardhat Documentation](https://hardhat.org/getting-started/)
+- [Zama fhEVM Documentation](https://docs.zama.ai/fhevm)
+- [Solidity Documentation](https://docs.soliditylang.org/)
+- [Ethers.js Documentation](https://docs.ethers.org/v6/)
+
+<Note>
+If you encounter issues not covered here, please report them on the [GitHub repository](https://github.com/Himess/fhevm-bootcamp/issues).
+</Note>

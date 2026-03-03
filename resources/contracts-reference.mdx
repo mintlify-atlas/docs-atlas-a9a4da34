@@ -1,0 +1,544 @@
+---
+title: Contracts Reference
+description: Overview of all 35 bootcamp contracts
+---
+
+This page provides an overview of all 35 contracts in the FHEVM Bootcamp curriculum.
+
+## Contracts by Module
+
+### Phase 1: Foundation (Modules 00-03)
+
+<AccordionGroup>
+  <Accordion title="01. SimpleStorage (Module 00)" icon="cube">
+    **Purpose:** Solidity fundamentals review
+    
+    **Features:**
+    - Basic storage variable
+    - Getter and setter functions
+    - Events
+    
+    **Key Learning:** Standard Solidity patterns before FHE
+    
+    **Deployed:** `0x8B7D25a45890d214db56790ae59afaE72273c1D3` (Sepolia)
+  </Accordion>
+
+  <Accordion title="02. BasicToken (Module 00)" icon="coins">
+    **Purpose:** ERC-20 fundamentals review
+    
+    **Features:**
+    - Plaintext balances
+    - Transfer function
+    - Mint function
+    
+    **Key Learning:** Understanding standard tokens before building confidential ones
+    
+    **Deployed:** `0x790f57EA01ec1f903645723D6990Eeaa2a36a814` (Sepolia)
+  </Accordion>
+
+  <Accordion title="03. HelloFHEVM (Module 02)" icon="hand-wave">
+    **Purpose:** First encrypted contract
+    
+    **Features:**
+    - Encrypted counter (`euint32`)
+    - Increment function
+    - Inherits `ZamaEthereumConfig`
+    
+    **Key Learning:** Basic encrypted state and FHE.allowThis()
+    
+    **Deployed:** `0xbFd008661B7222Dd974074f986D1eb18dD4dF1F1` (Sepolia)
+  </Accordion>
+
+  <Accordion title="04. EncryptedTypes (Module 03)" icon="shapes">
+    **Purpose:** Type system demonstration
+    
+    **Features:**
+    - All encrypted types (ebool, euint8-256, eaddress)
+    - Type storage patterns
+    - Type retrieval
+    
+    **Key Learning:** Encrypted type declaration and storage
+    
+    **Deployed:** `0x56c52A3b621346DC47B7B2A4bE0230721EE48c12` (Sepolia)
+  </Accordion>
+
+  <Accordion title="05. TypeConversions (Module 03)" icon="arrows-rotate">
+    **Purpose:** Type casting demonstration
+    
+    **Features:**
+    - Upcast (euint8 → euint32)
+    - Downcast (euint32 → euint8)
+    - Plaintext to encrypted conversion
+    
+    **Key Learning:** FHE.asEuintXX() for type conversion
+    
+    **Deployed:** `0x11c8ebc9A95B2A1DA4155b167dadA9B5925dde8f` (Sepolia)
+  </Accordion>
+</AccordionGroup>
+
+### Phase 2: Core (Modules 04-09)
+
+<AccordionGroup>
+  <Accordion title="06. ArithmeticOps (Module 04)" icon="calculator">
+    **Purpose:** Arithmetic operations on encrypted values
+    
+    **Features:**
+    - FHE.add, FHE.sub, FHE.mul
+    - FHE.div, FHE.rem (plaintext divisor)
+    - FHE.min, FHE.max, FHE.neg
+    
+    **Key Learning:** All arithmetic FHE operations
+    
+    **Deployed:** `0xB6D81352EA3Cd0426838B655D15097E0FaE80177` (Sepolia)
+  </Accordion>
+
+  <Accordion title="07. BitwiseOps (Module 04)" icon="binary">
+    **Purpose:** Bitwise operations
+    
+    **Features:**
+    - FHE.and, FHE.or, FHE.xor, FHE.not
+    - FHE.shl, FHE.shr (shift)
+    - FHE.rotl, FHE.rotr (rotate)
+    
+    **Key Learning:** Bitwise manipulation of encrypted values
+    
+    **Deployed:** `0xb0bd1D30eDfaAbA1fc02F7A917820fD9edB24438` (Sepolia)
+  </Accordion>
+
+  <Accordion title="08. ComparisonOps (Module 04)" icon="code-compare">
+    **Purpose:** Comparison operations
+    
+    **Features:**
+    - FHE.eq, FHE.ne
+    - FHE.gt, FHE.ge, FHE.lt, FHE.le
+    - Returns ebool
+    
+    **Key Learning:** Encrypted comparisons produce ebool
+    
+    **Deployed:** `0xB1141F0b2588aAb0C1fe819b1B6AF1C0a7564490` (Sepolia)
+  </Accordion>
+
+  <Accordion title="09. ACLDemo (Module 05)" icon="lock">
+    **Purpose:** Access Control List demonstration
+    
+    **Features:**
+    - FHE.allowThis()
+    - FHE.allow(ciphertext, address)
+    - FHE.isSenderAllowed()
+    
+    **Key Learning:** ACL permission management
+    
+    **Deployed:** `0xc4f08eB557DF912E3D1FdE79bf3465d5242ea53d` (Sepolia)
+  </Accordion>
+
+  <Accordion title="10. MultiUserVault (Module 05)" icon="vault">
+    **Purpose:** Per-user encrypted balances
+    
+    **Features:**
+    - mapping(address => euint64) balances
+    - Deposit and withdraw
+    - Per-user ACL
+    
+    **Key Learning:** Multi-user encrypted state management
+    
+    **Deployed:** `0xa988F5BFD7Fc19481Fdac5b55027b7Dc126a67e6` (Sepolia)
+  </Accordion>
+
+  <Accordion title="11. SecureInput (Module 06)" icon="upload">
+    **Purpose:** Encrypted input handling
+    
+    **Features:**
+    - externalEuint32 input parameter
+    - FHE.fromExternal(value, proof)
+    - FHE.isInitialized() check
+    
+    **Key Learning:** Client-to-contract encrypted input pipeline
+    
+    **Deployed:** `0x27d2b5247949606f913Db8c314EABB917fcffd96` (Sepolia)
+  </Accordion>
+
+  <Accordion title="12. PublicDecrypt (Module 07)" icon="eye">
+    **Purpose:** On-chain decryption pattern
+    
+    **Features:**
+    - FHE.makePubliclyDecryptable()
+    - FHE.isPubliclyDecryptable()
+    - Timed reveal
+    
+    **Key Learning:** Public decryption for on-chain reveal
+    
+    **Deployed:** `0x605002BbB689457101104e8Ee3C76a8d5D23e5c8` (Sepolia)
+  </Accordion>
+
+  <Accordion title="13. UserDecrypt (Module 07)" icon="user-lock">
+    **Purpose:** User-specific decryption via ACL
+    
+    **Features:**
+    - FHE.allow(ciphertext, user)
+    - Client-side instance.userDecrypt()
+    - Private balance viewing
+    
+    **Key Learning:** Re-encryption for user-specific reads
+    
+    **Deployed:** `0x5E3ef9A91AD33270f84B32ACFF91068Eea44c5ee` (Sepolia)
+  </Accordion>
+
+  <Accordion title="14. ConditionalDemo (Module 08)" icon="code-branch">
+    **Purpose:** FHE.select pattern
+    
+    **Features:**
+    - FHE.select(condition, valueIfTrue, valueIfFalse)
+    - Nested selects
+    - Boolean logic (FHE.and, FHE.or)
+    
+    **Key Learning:** Branchless conditional logic
+    
+    **Deployed:** `0x0A206f2BC275012703BA262B9577ABC49A4f6782` (Sepolia)
+  </Accordion>
+
+  <Accordion title="15. EncryptedMinMax (Module 08)" icon="arrows-up-down">
+    **Purpose:** Min/max with FHE.select
+    
+    **Features:**
+    - FHE.gt comparison
+    - FHE.select to choose min/max
+    - Silent fail pattern
+    
+    **Key Learning:** Implementing encrypted min/max logic
+    
+    **Deployed:** `0xbA5c38093CefBbFA08577b08b0494D5c7738E4F6` (Sepolia)
+  </Accordion>
+
+  <Accordion title="16. RandomDemo (Module 09)" icon="dice">
+    **Purpose:** On-chain encrypted randomness
+    
+    **Features:**
+    - FHE.randEuint32()
+    - FHE.randEbool()
+    - Bounded random (upperBound)
+    
+    **Key Learning:** Generating encrypted random values
+    
+    **Deployed:** `0xe473aF953d269601402DEBcB2cc899aB594Ad31e` (Sepolia)
+  </Accordion>
+</AccordionGroup>
+
+### Phase 3: Applications (Modules 10-13)
+
+<AccordionGroup>
+  <Accordion title="17. SimpleCounter (Module 10)" icon="hashtag">
+    **Purpose:** Frontend integration demo
+    
+    **Features:**
+    - Encrypted counter
+    - Increment with encrypted input
+    - Frontend with Relayer SDK
+    
+    **Key Learning:** Client-side encryption with @zama-fhe/relayer-sdk
+    
+    **Deployed:** `0x17B6209385c2e36E6095b89572273175902547f9` (Sepolia)
+  </Accordion>
+
+  <Accordion title="18. ConfidentialERC20 (Module 11)" icon="money-bill">
+    **Purpose:** Confidential token standard
+    
+    **Features:**
+    - Encrypted balances (euint64)
+    - transfer() with silent fail
+    - approve() and transferFrom()
+    - ERC-7984 pattern
+    
+    **Key Learning:** Building confidential tokens
+    
+    **Deployed:** `0x623b1653AB004661BC7832AC2930Eb42607C4013` (Sepolia)
+  </Accordion>
+
+  <Accordion title="19. ConfidentialVoting (Module 12)" icon="check-to-slot">
+    **Purpose:** Encrypted voting with tally reveal
+    
+    **Features:**
+    - Encrypted votes (euint64)
+    - Homomorphic tallying (FHE.add)
+    - finalizeProposal() with decryption
+    - Duplicate vote prevention
+    
+    **Key Learning:** Privacy-preserving voting
+    
+    **Deployed:** `0xd80537D04652E1B4B591319d83812BbA6a9c1B14` (Sepolia)
+  </Accordion>
+
+  <Accordion title="20. PrivateVoting (Module 12)" icon="vote-yea">
+    **Purpose:** Alternative voting implementation
+    
+    **Features:**
+    - Multiple candidates
+    - Encrypted vote counts
+    - Winner determination
+    
+    **Key Learning:** Multi-candidate encrypted voting
+    
+    **Deployed:** `0x70Aa742C113218a12A6582f60155c2B299551A43` (Sepolia)
+  </Accordion>
+
+  <Accordion title="21. SealedBidAuction (Module 13)" icon="gavel">
+    **Purpose:** First-price sealed-bid auction
+    
+    **Features:**
+    - Encrypted bids (euint64)
+    - Winner determination with FHE.gt + FHE.select
+    - Bid reveal after deadline
+    
+    **Key Learning:** Encrypted bid comparison
+    
+    **Deployed:** `0xC53c8E05661450919951f51E4da829a3AABD76A2` (Sepolia)
+  </Accordion>
+
+  <Accordion title="22. RevealableAuction (Module 13)" icon="eye-slash">
+    **Purpose:** Auction with selective reveal
+    
+    **Features:**
+    - Encrypted bids
+    - Only winning bid revealed
+    - Losing bids remain encrypted
+    
+    **Key Learning:** Selective decryption patterns
+    
+    **Deployed:** `0x8F1ae8209156C22dFD972352A415880040fB0b0c` (Sepolia)
+  </Accordion>
+
+  <Accordion title="23. EncryptedMarketplace (Module 13)" icon="shop">
+    **Purpose:** Confidential marketplace
+    
+    **Features:**
+    - Encrypted prices
+    - Encrypted inventory
+    - Purchase with encrypted amounts
+    
+    **Key Learning:** Multi-party encrypted commerce
+    
+    **Deployed:** `0x1E44074dF559E4f46De367ddbA0793fC710DB3a7` (Sepolia)
+  </Accordion>
+
+  <Accordion title="24. EncryptedLottery (Module 09)" icon="ticket">
+    **Purpose:** On-chain lottery with encrypted randomness
+    
+    **Features:**
+    - FHE.randEuint32() for winner selection
+    - Encrypted ticket numbers
+    - Prize pool
+    
+    **Key Learning:** Randomness in games
+    
+    **Deployed:** `0x32D3012EEE7e14175CA24Fc8e8dAb5b1Cebf929e` (Sepolia)
+  </Accordion>
+</AccordionGroup>
+
+### Phase 4: Mastery (Modules 14-18)
+
+<AccordionGroup>
+  <Accordion title="25. TestableVault (Module 14)" icon="flask">
+    **Purpose:** Testing patterns for FHE
+    
+    **Features:**
+    - Mock mode setup
+    - createEncryptedInput helpers
+    - Silent failure test patterns
+    
+    **Key Learning:** FHE contract testing strategies
+    
+    **Deployed:** `0xfa2a63616aDe3E5BE4abFEdAF8E58780eaF0feE9` (Sepolia)
+  </Accordion>
+
+  <Accordion title="26. GasOptimized (Module 15)" icon="gauge-high">
+    **Purpose:** Gas optimization techniques
+    
+    **Features:**
+    - Plaintext operands (FHE.add(enc, plaintext))
+    - Type selection (euint8 vs euint32)
+    - Batch operations
+    
+    **Key Learning:** Reducing FHE gas costs
+    
+    **Deployed:** `0x86daECb1Cc9Ce4862A8baFaF1f01aBe979a9b582` (Sepolia)
+  </Accordion>
+
+  <Accordion title="27. GasBenchmark (Module 15)" icon="chart-line">
+    **Purpose:** Gas cost measurement
+    
+    **Features:**
+    - Benchmark functions for all operation types
+    - Cost comparison across types
+    - Gas reporting
+    
+    **Key Learning:** Understanding FHE operation costs
+    
+    **Deployed:** `0x76da41a5bD46F428E32E79a081065697C5151693` (Sepolia)
+  </Accordion>
+
+  <Accordion title="28. SecurityPatterns (Module 16)" icon="shield-halved">
+    **Purpose:** Security best practices
+    
+    **Features:**
+    - Constant-gas patterns
+    - FHE.isInitialized() checks
+    - LastError pattern
+    - No-revert patterns
+    
+    **Key Learning:** Secure FHE contract design
+    
+    **Deployed:** `0x59f51Da1Df210745bf64aABA55D1b874B26001f2` (Sepolia)
+  </Accordion>
+
+  <Accordion title="29. VulnerableDemo (Module 16)" icon="bug">
+    **Purpose:** Common vulnerabilities (educational)
+    
+    **Features:**
+    - Intentional bugs for learning
+    - Missing ACL
+    - Information leakage examples
+    
+    **Key Learning:** What NOT to do in FHE contracts
+    
+    **Deployed:** `0x5AC6485D93CD0b90A7cF94eC706ef6e70DAEB778` (Sepolia)
+  </Accordion>
+
+  <Accordion title="30. EncryptedStateMachine (Module 17)" icon="diagram-project">
+    **Purpose:** State machines with encrypted transitions
+    
+    **Features:**
+    - 4 states with encrypted thresholds
+    - FHE.ge for threshold checks
+    - FHE.select for state transitions
+    
+    **Key Learning:** Advanced design patterns
+    
+    **Deployed:** `0x17259782D5dB2C13a8A385211f8BE6b1001d0378` (Sepolia)
+  </Accordion>
+
+  <Accordion title="31. LastErrorPattern (Module 17)" icon="circle-exclamation">
+    **Purpose:** Encrypted error reporting
+    
+    **Features:**
+    - Per-user encrypted error codes
+    - No information leakage from errors
+    - Error checking without reverts
+    
+    **Key Learning:** Encrypted feedback mechanisms
+    
+    **Deployed:** `0x7f12c6D6b13C1E985D0efD1d79873c3e7F9c6c41` (Sepolia)
+  </Accordion>
+
+  <Accordion title="32. EncryptedRegistry (Module 17)" icon="database">
+    **Purpose:** Per-user private data stores
+    
+    **Features:**
+    - mapping(address => mapping(bytes32 => euint64))
+    - Encrypted key-value storage
+    - Cross-contract ACL
+    
+    **Key Learning:** Complex encrypted data structures
+    
+    **Deployed:** `0xBF472B66b331303d9d7dF83195F7C355E332E137` (Sepolia)
+  </Accordion>
+
+  <Accordion title="33. ConfidentialLending (Module 18)" icon="hand-holding-dollar">
+    **Purpose:** Confidential DeFi lending
+    
+    **Features:**
+    - Encrypted collateral deposits
+    - 50% LTV check with FHE.ge + FHE.select
+    - Encrypted borrow amounts
+    
+    **Key Learning:** Confidential DeFi primitives
+    
+    **Deployed:** `0x8B5526092F6a230E23651f0Eb559fd758C42967A` (Sepolia)
+  </Accordion>
+
+  <Accordion title="34. EncryptedOrderBook (Module 18)" icon="book">
+    **Purpose:** Confidential order matching
+    
+    **Features:**
+    - Encrypted limit orders
+    - Encrypted price/amount fields
+    - Order matching with FHE.ge
+    
+    **Key Learning:** MEV-protected trading
+    
+    **Deployed:** `0xB0fcA1f21d598006c5Bd327c44140a3471787E82` (Sepolia)
+  </Accordion>
+</AccordionGroup>
+
+### Phase 5: Capstone (Module 19)
+
+<Accordion title="35. ConfidentialDAO (Module 19)" icon="users-gear">
+  **Purpose:** Capstone project demonstrating all concepts
+  
+  **Features:**
+  - Encrypted governance token (euint64 balances)
+  - Encrypted voting (yesVotes, noVotes)
+  - Private treasury management
+  - Proposal creation and execution
+  - Delegation support
+  - LastError pattern
+  - Full lifecycle: mint → propose → vote → finalize → execute
+  
+  **Integrates:**
+  - Modules 03-18: All encrypted types, operations, ACL, inputs, decryption, conditionals, randomness, frontend, testing, gas optimization, security, advanced patterns, DeFi
+  
+  **Key Learning:** Building production-grade confidential applications
+  
+  **Deployed:** `0x6C41b7E9b4e8fe2366Ba842f04E975ed7a4e9d72` (Sepolia)
+</Accordion>
+
+## Summary Statistics
+
+<CardGroup cols={2}>
+  <Card title="Total Contracts" icon="cube">
+    **35 contracts** across 20 modules
+  </Card>
+  
+  <Card title="Total Tests" icon="flask">
+    **328 tests** (all passing)
+  </Card>
+  
+  <Card title="Network" icon="network-wired">
+    All deployed to **Ethereum Sepolia** testnet
+  </Card>
+  
+  <Card title="Test Coverage" icon="percent">
+    **95%+** line coverage
+  </Card>
+</CardGroup>
+
+## Contract Categories
+
+### By Complexity
+
+| Level | Count | Examples |
+|---|---|---|
+| **Beginner** | 8 | SimpleStorage, HelloFHEVM, EncryptedTypes |
+| **Intermediate** | 13 | ACLDemo, ConditionalDemo, RandomDemo |
+| **Advanced** | 10 | ConfidentialERC20, ConfidentialVoting, SealedBidAuction |
+| **Expert** | 4 | ConfidentialLending, EncryptedOrderBook, ConfidentialDAO |
+
+### By Concept
+
+| Concept | Contracts |
+|---|---|
+| **Operations** | ArithmeticOps, BitwiseOps, ComparisonOps |
+| **ACL** | ACLDemo, MultiUserVault, UserDecrypt |
+| **Inputs** | SecureInput, SimpleCounter |
+| **Decryption** | PublicDecrypt, UserDecrypt |
+| **Conditionals** | ConditionalDemo, EncryptedMinMax |
+| **Randomness** | RandomDemo, EncryptedLottery |
+| **Tokens** | ConfidentialERC20, SecurityPatterns |
+| **Voting** | ConfidentialVoting, PrivateVoting |
+| **Auctions** | SealedBidAuction, RevealableAuction |
+| **DeFi** | ConfidentialLending, EncryptedOrderBook |
+| **Governance** | ConfidentialDAO |
+
+## Interactive Explorer
+
+Explore all deployed contracts on Sepolia Etherscan:
+
+[View Full Deployment Report](/resources/deployed-contracts)

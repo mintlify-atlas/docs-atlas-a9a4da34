@@ -1,0 +1,570 @@
+---
+title: Arithmetic Operations
+description: Complete reference for FHE arithmetic operations (add, sub, mul, div, rem, min, max, neg)
+---
+
+## Overview
+
+The FHE library provides arithmetic operations on encrypted integers. All operations preserve encryption, meaning results remain encrypted without revealing intermediate values.
+
+## Import
+
+```solidity
+import { FHE, euint32, euint64 } from "@fhevm/solidity/lib/FHE.sol";
+```
+
+---
+
+## Addition
+
+### FHE.add()
+
+Add two encrypted values or an encrypted value and a plaintext value.
+
+<ParamField path="a" type="euintXX" required>
+  First operand (encrypted)
+</ParamField>
+
+<ParamField path="b" type="euintXX | uintXX" required>
+  Second operand (encrypted or plaintext)
+</ParamField>
+
+<ParamField path="returns" type="euintXX">
+  Encrypted sum (same type as operands)
+</ParamField>
+
+**Signature**:
+```solidity
+function add(euintXX a, euintXX b) returns (euintXX)
+function add(euintXX a, uintXX b) returns (euintXX)
+```
+
+**Example (Encrypted + Encrypted)**:
+```solidity
+contract ArithmeticDemo is ZamaEthereumConfig {
+    function addEncrypted(uint32 a, uint32 b) external returns (euint32) {
+        euint32 encA = FHE.asEuint32(a);
+        euint32 encB = FHE.asEuint32(b);
+        euint32 result = FHE.add(encA, encB);
+        
+        FHE.allowThis(result);
+        FHE.allow(result, msg.sender);
+        return result;
+    }
+}
+```
+
+**Example (Encrypted + Plaintext)**:
+```solidity
+function increment(euint32 counter) internal returns (euint32) {
+    euint32 newCounter = FHE.add(counter, 1);  // Add plaintext 1
+    FHE.allowThis(newCounter);
+    return newCounter;
+}
+```
+
+**Gas Cost** (approximate):
+- `euint8`: ~80k gas
+- `euint32`: ~180k gas
+- `euint64`: ~250k gas
+- `euint256`: ~600k gas
+- Mixed (encrypted + plaintext): 30-40% cheaper
+
+**Overflow Behavior**:
+<Warning>
+  Addition wraps on overflow. `FHE.add` on `euint8` with values 200 + 100 = 44 (wraps at 256). No revert occurs.
+</Warning>
+
+---
+
+## Subtraction
+
+### FHE.sub()
+
+Subtract two encrypted values or subtract a plaintext from an encrypted value.
+
+<ParamField path="a" type="euintXX" required>
+  Minuend (encrypted)
+</ParamField>
+
+<ParamField path="b" type="euintXX | uintXX" required>
+  Subtrahend (encrypted or plaintext)
+</ParamField>
+
+<ParamField path="returns" type="euintXX">
+  Encrypted difference
+</ParamField>
+
+**Signature**:
+```solidity
+function sub(euintXX a, euintXX b) returns (euintXX)
+function sub(euintXX a, uintXX b) returns (euintXX)
+```
+
+**Example**:
+```solidity
+function withdraw(address user, euint64 amount) internal {
+    euint64 balance = balances[user];
+    euint64 newBalance = FHE.sub(balance, amount);
+    
+    balances[user] = newBalance;
+    FHE.allowThis(newBalance);
+    FHE.allow(newBalance, user);
+}
+```
+
+**Safe Subtraction Pattern**:
+```solidity
+// Subtract only if a >= b, otherwise return 0
+function safeSub(euint32 a, euint32 b) public returns (euint32) {
+    ebool canSub = FHE.ge(a, b);
+    euint32 diff = FHE.sub(a, b);
+    euint32 result = FHE.select(canSub, diff, FHE.asEuint32(0));
+    
+    FHE.allowThis(result);
+    FHE.allow(result, msg.sender);
+    return result;
+}
+```
+
+**Gas Cost**: Similar to `FHE.add()`
+
+**Underflow Behavior**:
+<Warning>
+  Subtraction wraps on underflow. `FHE.sub(euint8(10), euint8(20))` = 246 (wraps at 0). No revert occurs.
+</Warning>
+
+---
+
+## Multiplication
+
+### FHE.mul()
+
+Multiply two encrypted values or an encrypted value by a plaintext value.
+
+<ParamField path="a" type="euintXX" required>
+  First factor (encrypted)
+</ParamField>
+
+<ParamField path="b" type="euintXX | uintXX" required>
+  Second factor (encrypted or plaintext)
+</ParamField>
+
+<ParamField path="returns" type="euintXX">
+  Encrypted product
+</ParamField>
+
+**Signature**:
+```solidity
+function mul(euintXX a, euintXX b) returns (euintXX)
+function mul(euintXX a, uintXX b) returns (euintXX)
+```
+
+**Example**:
+```solidity
+function calculateFee(euint64 amount) internal returns (euint64) {
+    // 2% fee = amount * 2 / 100
+    euint64 fee = FHE.div(FHE.mul(amount, 2), 100);
+    FHE.allowThis(fee);
+    return fee;
+}
+```
+
+**Gas Cost** (approximate):
+- `euint8`: ~150k gas
+- `euint32`: ~400k gas
+- `euint64`: ~700k gas
+- `euint256`: ~2M gas
+
+<Warning>
+  Multiplication is 2-3x more expensive than addition. Multiplication of two `euint256` values costs ~2M gas.
+</Warning>
+
+---
+
+## Division
+
+### FHE.div()
+
+Divide an encrypted value by a **plaintext** value.
+
+<ParamField path="a" type="euintXX" required>
+  Dividend (encrypted)
+</ParamField>
+
+<ParamField path="b" type="uintXX" required>
+  Divisor (MUST be plaintext, not encrypted)
+</ParamField>
+
+<ParamField path="returns" type="euintXX">
+  Encrypted quotient
+</ParamField>
+
+**Signature**:
+```solidity
+function div(euintXX a, uintXX b) returns (euintXX)
+```
+
+<Warning>
+  **CRITICAL**: `FHE.div()` only accepts a plaintext (scalar) second operand. You cannot divide by an encrypted value.
+</Warning>
+
+**Example**:
+```solidity
+function divideByTwo(uint32 value) external returns (euint32) {
+    euint32 encValue = FHE.asEuint32(value);
+    euint32 result = FHE.div(encValue, 2);  // ✅ Plaintext divisor
+    
+    FHE.allowThis(result);
+    FHE.allow(result, msg.sender);
+    return result;
+}
+
+// ❌ WRONG: Cannot divide by encrypted value
+// euint32 result = FHE.div(encA, encB);  // Compilation error
+```
+
+**Gas Cost** (approximate):
+- `euint8`: ~250k gas
+- `euint32`: ~700k gas
+- `euint64`: ~1.2M gas
+- `euint256`: ~3.5M gas
+
+**Division by Zero**:
+<Warning>
+  Dividing by zero returns 0 (no revert). Always validate divisor is non-zero.
+</Warning>
+
+---
+
+## Remainder (Modulo)
+
+### FHE.rem()
+
+Compute remainder of division by a **plaintext** value.
+
+<ParamField path="a" type="euintXX" required>
+  Dividend (encrypted)
+</ParamField>
+
+<ParamField path="b" type="uintXX" required>
+  Divisor (MUST be plaintext, not encrypted)
+</ParamField>
+
+<ParamField path="returns" type="euintXX">
+  Encrypted remainder
+</ParamField>
+
+**Signature**:
+```solidity
+function rem(euintXX a, uintXX b) returns (euintXX)
+```
+
+**Example**:
+```solidity
+function isEven(euint32 value) internal returns (ebool) {
+    euint32 remainder = FHE.rem(value, 2);
+    return FHE.eq(remainder, FHE.asEuint32(0));
+}
+
+function randomInRange(uint32 max) external returns (euint32) {
+    euint32 random = FHE.randEuint32();
+    euint32 bounded = FHE.rem(random, max);  // [0, max)
+    
+    FHE.allowThis(bounded);
+    FHE.allow(bounded, msg.sender);
+    return bounded;
+}
+```
+
+**Gas Cost**: Similar to `FHE.div()`
+
+---
+
+## Minimum
+
+### FHE.min()
+
+Return the minimum of two encrypted values.
+
+<ParamField path="a" type="euintXX" required>
+  First value (encrypted)
+</ParamField>
+
+<ParamField path="b" type="euintXX | uintXX" required>
+  Second value (encrypted or plaintext)
+</ParamField>
+
+<ParamField path="returns" type="euintXX">
+  Encrypted minimum
+</ParamField>
+
+**Signature**:
+```solidity
+function min(euintXX a, euintXX b) returns (euintXX)
+function min(euintXX a, uintXX b) returns (euintXX)
+```
+
+**Example**:
+```solidity
+function capWithdrawal(euint64 requestedAmount, euint64 balance) 
+    internal 
+    returns (euint64) 
+{
+    // Withdraw minimum of (requested, balance)
+    euint64 actualAmount = FHE.min(requestedAmount, balance);
+    FHE.allowThis(actualAmount);
+    return actualAmount;
+}
+```
+
+**Clamp to Maximum**:
+```solidity
+// Ensure value doesn't exceed 100
+euint32 capped = FHE.min(value, FHE.asEuint32(100));
+```
+
+**Gas Cost** (approximate):
+- `euint8`: ~180k gas
+- `euint32`: ~450k gas
+- `euint64`: ~750k gas
+
+<Info>
+  `FHE.min()` is equivalent to `FHE.select(FHE.lt(a, b), a, b)` but more readable.
+</Info>
+
+---
+
+## Maximum
+
+### FHE.max()
+
+Return the maximum of two encrypted values.
+
+<ParamField path="a" type="euintXX" required>
+  First value (encrypted)
+</ParamField>
+
+<ParamField path="b" type="euintXX | uintXX" required>
+  Second value (encrypted or plaintext)
+</ParamField>
+
+<ParamField path="returns" type="euintXX">
+  Encrypted maximum
+</ParamField>
+
+**Signature**:
+```solidity
+function max(euintXX a, euintXX b) returns (euintXX)
+function max(euintXX a, uintXX b) returns (euintXX)
+```
+
+**Example**:
+```solidity
+function updateHighScore(address player, euint32 newScore) external {
+    euint32 currentHigh = highScores[player];
+    highScores[player] = FHE.max(currentHigh, newScore);
+    
+    FHE.allowThis(highScores[player]);
+    FHE.allow(highScores[player], player);
+}
+```
+
+**Clamp to Minimum**:
+```solidity
+// Ensure value is at least 10
+euint32 raised = FHE.max(value, FHE.asEuint32(10));
+```
+
+**Clamp to Range (Min/Max Combined)**:
+```solidity
+function clampValue(euint32 value, uint32 minVal, uint32 maxVal) 
+    public 
+    returns (euint32) 
+{
+    euint32 raised = FHE.max(value, minVal);      // Ensure >= min
+    euint32 clamped = FHE.min(raised, maxVal);    // Ensure <= max
+    
+    FHE.allowThis(clamped);
+    FHE.allow(clamped, msg.sender);
+    return clamped;
+}
+```
+
+**Gas Cost**: Same as `FHE.min()`
+
+---
+
+## Negation
+
+### FHE.neg()
+
+Negate an encrypted value (two's complement).
+
+<ParamField path="a" type="euintXX" required>
+  Value to negate (encrypted)
+</ParamField>
+
+<ParamField path="returns" type="euintXX">
+  Encrypted negation
+</ParamField>
+
+**Signature**:
+```solidity
+function neg(euintXX a) returns (euintXX)
+```
+
+**Example**:
+```solidity
+function negate(uint32 value) external returns (euint32) {
+    euint32 encValue = FHE.asEuint32(value);
+    euint32 negated = FHE.neg(encValue);
+    
+    FHE.allowThis(negated);
+    FHE.allow(negated, msg.sender);
+    return negated;
+}
+```
+
+**Behavior**:
+- `FHE.neg(euint8(5))` = 251 (256 - 5)
+- `FHE.neg(euint32(100))` = 4294967196 (2^32 - 100)
+
+**Gas Cost** (approximate):
+- `euint8`: ~60k gas
+- `euint32`: ~140k gas
+- `euint64`: ~200k gas
+
+<Info>
+  Negation is useful for computing differences when you know the order: `a - b = a + neg(b)`
+</Info>
+
+---
+
+## Complete Example: Confidential Vault
+
+```solidity
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import { FHE, euint64, externalEuint64, ebool } from "@fhevm/solidity/lib/FHE.sol";
+import { ZamaEthereumConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
+
+contract ConfidentialVault is ZamaEthereumConfig {
+    mapping(address => euint64) private balances;
+    uint64 public constant FEE_PERCENT = 2;  // 2% fee
+    
+    /// @notice Deposit funds (encrypted amount)
+    function deposit(externalEuint64 encAmount, bytes calldata inputProof) external {
+        euint64 amount = FHE.fromExternal(encAmount, inputProof);
+        
+        // Add to balance
+        balances[msg.sender] = FHE.add(balances[msg.sender], amount);
+        
+        FHE.allowThis(balances[msg.sender]);
+        FHE.allow(balances[msg.sender], msg.sender);
+    }
+    
+    /// @notice Withdraw with fee deduction
+    function withdraw(externalEuint64 encAmount, bytes calldata inputProof) external {
+        euint64 amount = FHE.fromExternal(encAmount, inputProof);
+        
+        // Calculate fee: amount * 2 / 100
+        euint64 fee = FHE.div(FHE.mul(amount, FEE_PERCENT), 100);
+        euint64 amountWithFee = FHE.add(amount, fee);
+        
+        // Check balance
+        ebool hasBalance = FHE.ge(balances[msg.sender], amountWithFee);
+        
+        // Deduct or keep same (silent fail)
+        euint64 toDeduct = FHE.select(hasBalance, amountWithFee, FHE.asEuint64(0));
+        balances[msg.sender] = FHE.sub(balances[msg.sender], toDeduct);
+        
+        FHE.allowThis(balances[msg.sender]);
+        FHE.allow(balances[msg.sender], msg.sender);
+    }
+    
+    /// @notice Get encrypted balance
+    function getBalance() external view returns (euint64) {
+        return balances[msg.sender];
+    }
+}
+```
+
+---
+
+## Gas Optimization Tips
+
+### 1. Use Plaintext Operands When Possible
+
+```solidity
+// ❌ Expensive (2 FHE ops)
+euint32 doubled = FHE.mul(value, FHE.asEuint32(2));
+
+// ✅ Cheaper (1 FHE op, 30% less gas)
+euint32 doubled = FHE.mul(value, 2);
+```
+
+### 2. Minimize Operation Count
+
+```solidity
+// ❌ Multiple operations
+euint64 a = FHE.add(x, y);
+euint64 b = FHE.add(a, z);
+euint64 c = FHE.mul(b, 2);
+
+// ✅ Combine when possible
+euint64 sum = FHE.add(FHE.add(x, y), z);
+euint64 result = FHE.mul(sum, 2);
+```
+
+### 3. Use Smallest Type That Fits
+
+```solidity
+// ❌ Wasteful for small values
+euint256 counter;
+
+// ✅ Efficient (3x cheaper gas)
+euint8 counter;  // Sufficient for 0-255
+```
+
+### 4. Cache Intermediate Results
+
+```solidity
+// ❌ Recomputes FHE.mul twice
+euint64 feeA = FHE.div(FHE.mul(amountA, 2), 100);
+euint64 feeB = FHE.div(FHE.mul(amountB, 2), 100);
+
+// ✅ Reuse computation if amounts are same
+euint64 doubled = FHE.mul(amount, 2);
+euint64 feeA = FHE.div(doubled, 100);
+```
+
+---
+
+## Important Notes
+
+<Warning>
+  **Overflow/Underflow**: All arithmetic operations wrap silently. Design your contracts to handle wrapping behavior or use safe patterns.
+</Warning>
+
+<Warning>
+  **Division/Remainder**: Only accept plaintext divisors. You cannot divide by an encrypted value.
+</Warning>
+
+<Info>
+  **Type Matching**: Both operands must be the same encrypted type, or the second operand must be plaintext of the corresponding size.
+</Info>
+
+<Tip>
+  **Gas Costs**: Multiplication is 2-3x more expensive than addition. Division is 3-4x more expensive. Plan your operations accordingly.
+</Tip>
+
+---
+
+## Related
+
+- [Comparison Operations](/api/comparison) - Compare encrypted values
+- [Conditional Logic](/api/conditional) - Branch-free control flow
+- [Gas Costs](/api/gas-costs) - Detailed cost analysis and optimization
+- [Type Casting](/api/type-casting) - Convert between encrypted types

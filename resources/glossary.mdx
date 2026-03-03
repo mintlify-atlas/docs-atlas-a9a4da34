@@ -1,0 +1,305 @@
+---
+title: FHEVM Glossary
+description: A-Z terminology for FHE and confidential smart contracts
+---
+
+An A-to-Z reference of terminology used in FHE, fhEVM, and confidential smart contract development.
+
+## A
+
+<AccordionGroup>
+  <Accordion title="ACL (Access Control List)">
+    A per-ciphertext permission system in fhEVM that tracks which addresses (contracts or users) are authorized to operate on or view a specific encrypted value. Every new ciphertext starts with an empty ACL and must be explicitly populated using `FHE.allow()` or `FHE.allowThis()`.
+  </Accordion>
+
+  <Accordion title="Allow">
+    The act of granting an address permission to use an encrypted value. In the new API: `FHE.allow(ciphertext, address)` for persistent permission, `FHE.allowThis(ciphertext)` for the current contract, and `FHE.allowTransient(ciphertext, address)` for single-transaction permission.
+  </Accordion>
+
+  <Accordion title="Arithmetic Circuit">
+    A mathematical representation of a computation as a series of addition and multiplication gates. FHE schemes operate on arithmetic or binary circuits to perform encrypted computation.
+  </Accordion>
+</AccordionGroup>
+
+## B
+
+<AccordionGroup>
+  <Accordion title="BFV (Brakerski-Fan-Vercauteren)">
+    An FHE scheme based on the Ring Learning With Errors (RLWE) problem. BFV is optimized for integer arithmetic and is one of the major FHE scheme families alongside BGV, CKKS, and TFHE.
+  </Accordion>
+
+  <Accordion title="BGV (Brakerski-Gentry-Vaikuntanathan)">
+    An FHE scheme similar to BFV, designed for modular integer arithmetic. BGV uses modulus switching for noise management.
+  </Accordion>
+
+  <Accordion title="Bootstrapping">
+    The process of refreshing a ciphertext to reduce accumulated noise, enabling further homomorphic operations. Bootstrapping is the key technique that makes Fully Homomorphic Encryption "fully" homomorphic, as it allows unlimited computation depth.
+  </Accordion>
+
+  <Accordion title="Branchless Programming">
+    A programming paradigm where control flow does not depend on runtime values. In FHE, since encrypted values cannot be inspected, all conditional logic must be implemented without `if/else` branches, using constructs like `FHE.select()` instead.
+  </Accordion>
+</AccordionGroup>
+
+## C
+
+<AccordionGroup>
+  <Accordion title="CKKS (Cheon-Kim-Kim-Song)">
+    An FHE scheme optimized for approximate arithmetic on real numbers. CKKS is commonly used in machine learning on encrypted data but is not used in fhEVM (which uses TFHE for exact integer arithmetic).
+  </Accordion>
+
+  <Accordion title="Ciphertext">
+    The encrypted form of data. In fhEVM, ciphertexts are represented as handles (references) on-chain, while the actual encrypted data lives in the coprocessor.
+  </Accordion>
+
+  <Accordion title="Confidential Smart Contract">
+    A smart contract that operates on encrypted data using FHE, ensuring that sensitive values remain private throughout computation. The contract logic is public (on-chain), but the data it processes is encrypted.
+  </Accordion>
+
+  <Accordion title="Coprocessor">
+    A specialized computation engine in fhEVM that performs the actual FHE operations off-chain. The EVM sends encrypted operation requests to the coprocessor, which processes them and returns encrypted results.
+  </Accordion>
+
+  <Accordion title="cToken (Confidential Token)">
+    A confidential token created by wrapping a standard ERC-20 token through Zama's fhEVM using the ERC-7984 standard. cTokens have encrypted balances and transfer amounts, providing on-chain privacy while maintaining fungibility.
+  </Accordion>
+</AccordionGroup>
+
+## D
+
+<AccordionGroup>
+  <Accordion title="Decryption">
+    The process of converting a ciphertext back to plaintext. In fhEVM, decryption is either done through `FHE.makePubliclyDecryptable()` (on-chain reveal) or through re-encryption (user-specific off-chain decryption via `instance.userDecrypt()`).
+  </Accordion>
+
+  <Accordion title="Devnet">
+    A development network provided by Zama for testing fhEVM contracts with real FHE operations (as opposed to mock mode which simulates FHE locally).
+  </Accordion>
+</AccordionGroup>
+
+## E
+
+<AccordionGroup>
+  <Accordion title="eaddress">
+    The encrypted address type in fhEVM. Represents an encrypted Ethereum address. Operations available: `FHE.eq`, `FHE.ne`, `FHE.select`.
+  </Accordion>
+
+  <Accordion title="ebool">
+    The encrypted boolean type in fhEVM. Produced by comparison operations (e.g., `FHE.gt`, `FHE.eq`) and consumed by `FHE.select` and boolean logic operations.
+  </Accordion>
+
+  <Accordion title="euint8 / euint16 / euint32 / euint64 / euint128 / euint256">
+    Encrypted unsigned integer types in fhEVM, representing 8-bit through 256-bit encrypted values. Larger types support larger value ranges but incur higher gas costs.
+  </Accordion>
+
+  <Accordion title="externalEuintXX">
+    The type used for encrypted inputs in external function parameters (e.g., `externalEuint32`, `externalEuint64`). Must be converted to the corresponding `euintXX` type using `FHE.fromExternal()` before use in FHE operations.
+  </Accordion>
+
+  <Accordion title="ERC-7984">
+    Confidential fungible token standard co-developed by Zama and OpenZeppelin. Defines encrypted balance storage and transfer interfaces using fhEVM's `euint64` type.
+  </Accordion>
+</AccordionGroup>
+
+## F
+
+<AccordionGroup>
+  <Accordion title="FHE (Fully Homomorphic Encryption)">
+    A form of encryption that allows arbitrary computations to be performed on encrypted data without decrypting it. The result of the computation, when decrypted, matches the result of performing the same computation on the plaintext data.
+  </Accordion>
+
+  <Accordion title="FHE Library">
+    The Solidity library in the new fhEVM API that provides all encrypted operations. Imported as `FHE` from `@fhevm/solidity/lib/FHE.sol`.
+  </Accordion>
+
+  <Accordion title="FHE.select">
+    The encrypted ternary operator: `FHE.select(ebool condition, euintXX valueIfTrue, euintXX valueIfFalse)`. The fundamental branching primitive in FHE programming, replacing `if/else` for encrypted conditions.
+  </Accordion>
+
+  <Accordion title="fhEVM">
+    Zama's implementation of Fully Homomorphic Encryption on the Ethereum Virtual Machine. Combines the standard EVM with a TFHE coprocessor to enable confidential smart contracts.
+  </Accordion>
+</AccordionGroup>
+
+## G
+
+<AccordionGroup>
+  <Accordion title="Gas (FHE context)">
+    The unit of computational cost on the EVM. FHE operations are significantly more expensive in gas than plaintext operations because they involve complex mathematical computations on ciphertexts.
+  </Accordion>
+
+  <Accordion title="Gentry, Craig">
+    The computer scientist who constructed the first Fully Homomorphic Encryption scheme in 2009, based on ideal lattices. His PhD thesis is one of the most significant breakthroughs in modern cryptography.
+  </Accordion>
+</AccordionGroup>
+
+## H
+
+<AccordionGroup>
+  <Accordion title="Handle">
+    The on-chain representation of a ciphertext in fhEVM. A handle is a reference (similar to a pointer) to the actual encrypted data stored in the coprocessor.
+  </Accordion>
+
+  <Accordion title="Homomorphic">
+    The property of an encryption scheme that allows mathematical operations on ciphertexts to correspond to operations on the underlying plaintexts. For example, if `Enc(a) + Enc(b) = Enc(a + b)`, the encryption is homomorphic with respect to addition.
+  </Accordion>
+
+  <Accordion title="Hybrid Contract">
+    A smart contract that uses both encrypted and plaintext values, encrypting only the data that requires confidentiality. Hybrid designs can significantly reduce gas costs.
+  </Accordion>
+</AccordionGroup>
+
+## I
+
+<AccordionGroup>
+  <Accordion title="Information Leakage">
+    The unintended disclosure of information about encrypted values through observable side channels. In fhEVM, potential leakage vectors include: transaction reverts, gas consumption differences, event emissions, and storage access patterns.
+  </Accordion>
+
+  <Accordion title="Input Encryption">
+    The process of encrypting plaintext data on the client side before submitting it to an fhEVM contract. Performed using the Relayer SDK (`@zama-fhe/relayer-sdk`) and the network's FHE public key.
+  </Accordion>
+</AccordionGroup>
+
+## K
+
+<AccordionGroup>
+  <Accordion title="Key Management">
+    The system for managing the cryptographic keys used in fhEVM:
+    - **FHE Public Key:** Used by clients to encrypt inputs. Publicly available.
+    - **Network Key:** Used by the coprocessor to evaluate FHE operations. Distributed among validators.
+    - **User Keys:** Used for re-encryption (viewing encrypted data specific to a user).
+  </Accordion>
+</AccordionGroup>
+
+## L
+
+<AccordionGroup>
+  <Accordion title="Lattice-Based Cryptography">
+    The branch of cryptography underpinning all modern FHE schemes. Security is based on the hardness of lattice problems such as the Learning With Errors (LWE) and Ring-LWE problems. Believed to be quantum-resistant.
+  </Accordion>
+
+  <Accordion title="Learning With Errors (LWE)">
+    A computational problem that is believed to be hard for both classical and quantum computers. LWE and its variants (Ring-LWE, Module-LWE) form the security foundation for TFHE and other FHE schemes.
+  </Accordion>
+</AccordionGroup>
+
+## M
+
+<AccordionGroup>
+  <Accordion title="Mock Mode">
+    A local testing environment where FHE operations are simulated without actual encryption. The Hardhat fhEVM plugin provides mock mode for fast development iteration.
+  </Accordion>
+
+  <Accordion title="MPC (Multi-Party Computation)">
+    A cryptographic technique where multiple parties jointly compute a function over their inputs without revealing those inputs to each other. MPC is an alternative to FHE for privacy-preserving computation.
+  </Accordion>
+</AccordionGroup>
+
+## N
+
+<AccordionGroup>
+  <Accordion title="Noise">
+    Random error deliberately added to ciphertexts in FHE schemes. Noise is essential for security but accumulates with each operation. If noise exceeds a threshold, decryption fails. Bootstrapping resets the noise level.
+  </Accordion>
+
+  <Accordion title="Noise Budget">
+    The amount of noise a ciphertext can tolerate before decryption becomes impossible. Each FHE operation consumes some noise budget. When the budget is exhausted, bootstrapping must be performed.
+  </Accordion>
+</AccordionGroup>
+
+## O
+
+<AccordionGroup>
+  <Accordion title="On-Chain Decryption">
+    Decryption that produces a plaintext value readable on the blockchain. Triggered by calling `FHE.makePubliclyDecryptable()`. The decrypted value is visible to all chain observers.
+  </Accordion>
+
+  <Accordion title="Overflow (Silent)">
+    In fhEVM, arithmetic overflow does not cause a revert. Instead, values silently wrap around. For example, `FHE.add` on `euint8` with values 200 and 100 produces 44 (300 mod 256) without any error signal.
+  </Accordion>
+</AccordionGroup>
+
+## P
+
+<AccordionGroup>
+  <Accordion title="Persistent Permission">
+    An ACL permission that persists across transactions. Set with `FHE.allow()` or `FHE.allowThis()`. The permission remains until the ciphertext is replaced with a new one.
+  </Accordion>
+
+  <Accordion title="Plaintext">
+    Unencrypted data. In the fhEVM context, plaintext values are standard Solidity types (`uint256`, `bool`, `address`) as opposed to their encrypted counterparts (`euint256`, `ebool`, `eaddress`).
+  </Accordion>
+
+  <Accordion title="Programmable Bootstrapping">
+    A technique specific to TFHE where bootstrapping simultaneously resets noise and applies an arbitrary function (via a lookup table) to the encrypted value.
+  </Accordion>
+</AccordionGroup>
+
+## R
+
+<AccordionGroup>
+  <Accordion title="Re-encryption">
+    The process of transforming a ciphertext encrypted under the network key into a ciphertext encrypted under a specific user's key. This allows the user to decrypt the value client-side without revealing it on-chain.
+  </Accordion>
+
+  <Accordion title="Ring-LWE (Ring Learning With Errors)">
+    A variant of the LWE problem defined over polynomial rings. Ring-LWE provides better efficiency than standard LWE while maintaining equivalent security.
+  </Accordion>
+</AccordionGroup>
+
+## S
+
+<AccordionGroup>
+  <Accordion title="Side Channel">
+    An indirect method of extracting information from a system by observing its behavior (gas usage, timing, error patterns) rather than directly accessing the protected data.
+  </Accordion>
+
+  <Accordion title="Silent Fail">
+    A design pattern in FHE contracts where an operation that cannot proceed (e.g., transfer with insufficient balance) does nothing instead of reverting. Implemented using `FHE.select()`.
+  </Accordion>
+</AccordionGroup>
+
+## T
+
+<AccordionGroup>
+  <Accordion title="TEE (Trusted Execution Environment)">
+    A hardware-based approach to confidential computing (e.g., Intel SGX, ARM TrustZone). TEEs provide a secure enclave for computation but rely on hardware trust assumptions.
+  </Accordion>
+
+  <Accordion title="TFHE (Torus Fully Homomorphic Encryption)">
+    The FHE scheme used by Zama's fhEVM. TFHE operates on bits and small integers, using programmable bootstrapping for efficient gate-by-gate evaluation.
+  </Accordion>
+
+  <Accordion title="TFHE-rs">
+    Zama's Rust implementation of the TFHE scheme. The underlying cryptographic engine used by the fhEVM coprocessor.
+  </Accordion>
+
+  <Accordion title="TVS (Total Value Shielded)">
+    The total value of encrypted assets within the fhEVM protocol. Analogous to TVL (Total Value Locked) in traditional DeFi.
+  </Accordion>
+
+  <Accordion title="Threshold Decryption">
+    A distributed decryption protocol where the decryption key is split among multiple parties, and a threshold number must cooperate to decrypt.
+  </Accordion>
+
+  <Accordion title="Transient Permission">
+    An ACL permission that exists only for the duration of the current transaction. Set with `FHE.allowTransient()`.
+  </Accordion>
+</AccordionGroup>
+
+## Z
+
+<AccordionGroup>
+  <Accordion title="Zama">
+    The company behind fhEVM and TFHE-rs. Zama develops open-source FHE tools for blockchain privacy, machine learning on encrypted data, and general-purpose FHE computation.
+  </Accordion>
+
+  <Accordion title="ZamaEthereumConfig">
+    The base contract in the new fhEVM API that provides the necessary configuration for FHE operations. Contracts using fhEVM must inherit from `ZamaEthereumConfig`.
+  </Accordion>
+
+  <Accordion title="Zero-Knowledge Proof (ZK Proof)">
+    A cryptographic method that allows one party to prove to another that a statement is true without revealing any information beyond the truth of the statement. ZK proofs are complementary to FHE.
+  </Accordion>
+</AccordionGroup>

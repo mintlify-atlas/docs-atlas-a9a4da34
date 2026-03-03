@@ -1,0 +1,346 @@
+---
+title: Assessment System
+description: Grading and evaluation criteria for the FHEVM Bootcamp
+---
+
+This document defines the assessment structure, grading criteria, and passing requirements for the FHEVM Bootcamp.
+
+## Overview
+
+The FHEVM Bootcamp uses a comprehensive assessment system to evaluate student mastery across three components:
+
+| Component | Weight | Description |
+|---|---|---|
+| **Quizzes** | 20% | End-of-module knowledge checks |
+| **Exercises** | 40% | Hands-on coding assignments |
+| **Capstone Project** | 40% | Original FHE application |
+
+## Passing Requirements
+
+<CardGroup cols={2}>
+  <Card title="Overall Score" icon="percent">
+    **70% or higher** overall score required to pass the bootcamp
+  </Card>
+  
+  <Card title="Component Minimums" icon="gauge">
+    **60% minimum** in each individual component (quizzes, exercises, capstone)
+  </Card>
+  
+  <Card title="Capstone Requirements" icon="check-double">
+    Capstone must **compile, deploy, and pass all provided test cases**
+  </Card>
+  
+  <Card title="Attendance" icon="calendar">
+    For cohort-based programs: **80% attendance** required for certification
+  </Card>
+</CardGroup>
+
+## Grading Scale
+
+| Grade | Range | Description |
+|---|---|---|
+| **Distinction** | 90--100% | Exceptional mastery of FHE development |
+| **Merit** | 80--89% | Strong understanding and application |
+| **Pass** | 70--79% | Satisfactory competency |
+| **Fail** | Below 70% | Does not meet minimum requirements |
+
+## Component 1: Quizzes (20%)
+
+### Structure
+
+- **20 quizzes** total (one per module)
+- **5-12 questions** per quiz
+- Mix of **multiple choice, true/false, and short answer**
+- Taken at the **end of each module**
+- **Open book** (can reference documentation)
+
+### Question Types
+
+#### Multiple Choice Example
+```
+Which FHE operation should you use to implement conditional logic?
+
+A) if/else statements on encrypted values
+B) FHE.select(condition, valueIfTrue, valueIfFalse)
+C) require() statements
+D) switch/case on encrypted values
+
+Correct Answer: B
+```
+
+#### True/False Example
+```
+True or False: Encrypted values in fhEVM automatically wrap on overflow without reverting.
+
+Correct Answer: True
+```
+
+#### Short Answer Example
+```
+Explain why you must call FHE.allowThis() after storing an encrypted value in contract storage.
+
+Sample Answer: Every FHE operation produces a new ciphertext with an empty ACL. 
+If the contract stores it without FHE.allowThis(), the contract will not have permission 
+to read its own storage in subsequent transactions.
+```
+
+### Grading Criteria
+
+- **Multiple choice / True-False:** Binary (correct or incorrect)
+- **Short answer:** Partial credit possible based on understanding demonstrated
+- **Minimum passing score per quiz:** 70%
+- **Retakes:** Unlimited retakes allowed with 24-hour waiting period
+
+## Component 2: Exercises (40%)
+
+### Structure
+
+- **20 exercises** total (one per module)
+- **Hands-on coding assignments**
+- Graded on **correctness (50%), code quality (25%), security (25%)**
+- Submitted via **GitHub repository** or **bootcamp LMS**
+
+### Grading Rubric Template
+
+#### Correctness (50%)
+
+| Criteria | Points | Description |
+|---|---|---|
+| Compiles without errors | 10 | Contract compiles with `npx hardhat compile` |
+| All required features implemented | 20 | All specified functions and behaviors work |
+| Tests pass | 10 | All provided tests pass |
+| Edge cases handled | 10 | Handles zero values, overflows, etc. |
+
+#### Code Quality (25%)
+
+| Criteria | Points | Description |
+|---|---|---|
+| Clean imports | 5 | No unused imports |
+| Naming conventions | 5 | Descriptive variable/function names |
+| NatSpec comments | 10 | All public functions documented |
+| Code organization | 5 | Logical structure, no code duplication |
+
+#### Security (25%)
+
+| Criteria | Points | Description |
+|---|---|---|
+| ACL management | 10 | FHE.allowThis() called after all state updates |
+| No information leakage | 10 | No reverts on encrypted conditions, no plaintext in events |
+| Input validation | 5 | FHE.isInitialized() checks, proper use of externalEuintXX |
+
+### Example Exercise Grading
+
+**Module 05 Exercise: Multi-User Vault**
+
+**Student Submission:**
+- Contract compiles: ✓ (10/10)
+- All features work: ✓ (20/20)
+- Tests pass: Partial (7/10) - 2 edge case tests fail
+- Edge cases: Partial (6/10) - missing overflow handling
+- Clean imports: ✓ (5/5)
+- Naming: ✓ (5/5)
+- NatSpec: Partial (7/10) - missing some @param tags
+- Organization: ✓ (5/5)
+- ACL: Partial (7/10) - forgot allowThis in one function
+- No leakage: ✓ (10/10)
+- Input validation: ✓ (5/5)
+
+**Total: 87/100 (Merit)**
+
+## Component 3: Capstone Project (40%)
+
+### Structure
+
+The capstone project is the culminating assessment, demonstrating mastery of all 18 preceding modules.
+
+**Project:** Confidential DAO (Module 19)  
+**Duration:** Week 4 (8-10 hours)  
+**Deliverables:**
+1. Smart contracts (compiles, deploys, works)
+2. Test suite (comprehensive, all passing)
+3. Documentation (README, security model, architecture)
+4. Presentation (5-10 minute demo + Q&A)
+
+### Grading Rubric
+
+#### 1. Smart Contracts (30%)
+
+| Criteria | Weight | Description |
+|---|---|---|
+| **Functionality** | 15% | Complete DAO lifecycle: propose → vote → finalize → execute |
+| **Architecture** | 10% | Clean contract separation, proper interfaces |
+| **Gas Optimization** | 5% | Plaintext operands used where applicable |
+
+#### 2. Test Suite (20%)
+
+| Criteria | Weight | Description |
+|---|---|---|
+| **Coverage** | 10% | All functions tested, edge cases covered |
+| **Quality** | 5% | Clear test names, proper assertions |
+| **Integration Tests** | 5% | Full lifecycle tests (mint → vote → execute) |
+
+#### 3. Documentation (20%)
+
+| Criteria | Weight | Description |
+|---|---|---|
+| **README** | 10% | Architecture explanation, setup instructions |
+| **Security Model** | 10% | Threat model, trust assumptions, known limitations |
+
+#### 4. Security (15%)
+
+| Criteria | Weight | Description |
+|---|---|---|
+| **ACL Management** | 5% | All ciphertexts have proper permissions |
+| **No Information Leakage** | 5% | No reverts on encrypted conditions, constant gas |
+| **Input Validation** | 5% | FHE.isInitialized() checks on all inputs |
+
+#### 5. Presentation (15%)
+
+| Criteria | Weight | Description |
+|---|---|---|
+| **Demo** | 10% | Working demo of full DAO workflow |
+| **Q&A** | 5% | Answers technical questions about design decisions |
+
+### Example Capstone Grading
+
+**Student: Alice**
+
+- **Functionality:** (14/15) - All features work, minor UI bug
+- **Architecture:** (10/10) - Excellent contract design
+- **Gas Optimization:** (4/5) - Some unnecessary FHE.asEuint calls
+- **Coverage:** (10/10) - 95% test coverage
+- **Quality:** (5/5) - Well-structured tests
+- **Integration:** (5/5) - Complete end-to-end tests
+- **README:** (9/10) - Clear, missing deployment steps
+- **Security Model:** (10/10) - Comprehensive threat analysis
+- **ACL:** (5/5) - Perfect ACL management
+- **No Leakage:** (5/5) - No side channels detected
+- **Input Validation:** (4/5) - Missing one isInitialized check
+- **Demo:** (10/10) - Flawless presentation
+- **Q&A:** (5/5) - Excellent technical depth
+
+**Total: 96/100 (Distinction)**
+
+## Weekly Homework Assignments
+
+Each week concludes with a homework assignment:
+
+| Week | Assignment | Modules Covered | Weight |
+|---|---|---|---|
+| Week 1 | Encrypted Calculator | 00-04 | 10% |
+| Week 2 | Encrypted Vault with Access Control | 05-09 | 10% |
+| Week 3 | Confidential Token + Voting System | 10-14 | 10% |
+| Week 4 | Capstone: Confidential DAO | 15-19 | 10% |
+
+See [Homework Assignments](/resources/homework-assignments) for full specifications.
+
+## Feedback & Resubmission
+
+### Exercises
+
+- **Feedback provided within:** 5 business days
+- **Resubmissions allowed:** Yes, once per exercise
+- **Resubmission deadline:** 7 days after feedback
+- **Resubmission grading:** Maximum 90% of original grade
+
+### Capstone
+
+- **Feedback provided within:** 7 business days
+- **Resubmissions allowed:** Yes, if score < 70%
+- **Resubmission deadline:** 14 days after feedback
+- **Resubmission grading:** Maximum 80% of original grade
+
+## Academic Integrity
+
+### Allowed
+
+- Referencing bootcamp materials and example contracts
+- Using Zama documentation
+- AI-assisted code (must be reviewed and understood)
+- Collaboration on understanding concepts
+
+### Not Allowed
+
+- Copying code from other students
+- Submitting AI-generated code without review
+- Sharing solutions before deadlines
+
+### Violations
+
+- **First offense:** Warning + resubmission required (max 50%)
+- **Second offense:** Automatic fail for the assignment
+- **Third offense:** Removal from bootcamp
+
+## Certification
+
+### Certificate of Completion
+
+**Requirements:**
+- Overall score ≥ 70%
+- Minimum 60% in each component
+- Capstone compiles, deploys, passes tests
+- For cohort programs: 80% attendance
+
+**Certificate includes:**
+- Student name
+- Completion date
+- Final grade (Distinction / Merit / Pass)
+- 63-hour curriculum completion
+- Zama signature
+
+### Certificate of Distinction
+
+**Requirements:**
+- Overall score ≥ 90%
+- All homework assignments ≥ 85%
+- Capstone ≥ 90%
+- For cohort programs: 100% attendance
+
+## Grade Calculation Example
+
+**Student: Bob**
+
+### Quizzes (20%)
+- Average quiz score: 82%
+- Component score: 82% × 0.20 = 16.4%
+
+### Exercises (40%)
+- Week 1 Homework: 88%
+- Week 2 Homework: 75%
+- Week 3 Homework: 92%
+- Module exercises average: 85%
+- Weighted average: (88 + 75 + 92) / 3 × 0.10 + 85 × 0.10 = 8.5% + 8.5% = 17%
+- Component score: 17% (out of 40%)
+
+Actually, let me recalculate:
+- Homework (30% of exercises = 12% total): (88 + 75 + 92) / 3 = 85%
+- Module exercises (70% of exercises = 28% total): 85%
+- Component score: 85% × 0.40 = 34%
+
+### Capstone (40%)
+- Capstone score: 87%
+- Component score: 87% × 0.40 = 34.8%
+
+### Final Grade
+- Total: 16.4% + 34% + 34.8% = 85.2%
+- **Grade: Merit**
+
+## Support & Resources
+
+<CardGroup cols={2}>
+  <Card title="Office Hours" icon="comments">
+    Weekly live Q&A sessions with instructors
+  </Card>
+  
+  <Card title="Discussion Forum" icon="users">
+    Community support on Zama forums
+  </Card>
+  
+  <Card title="Code Review" icon="code-compare">
+    Detailed feedback on all submissions
+  </Card>
+  
+  <Card title="1-on-1 Tutoring" icon="chalkboard-user">
+    Available for students scoring < 70%
+  </Card>
+</CardGroup>

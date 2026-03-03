@@ -1,0 +1,615 @@
+---
+title: Comparison Operations
+description: Complete reference for FHE comparison operations (eq, ne, gt, gte, lt, lte)
+---
+
+## Overview
+
+The FHE library provides comparison operations on encrypted values. All comparison operations return encrypted boolean results (`ebool`), allowing you to build conditional logic without revealing the comparison outcome.
+
+## Import
+
+```solidity
+import { FHE, euint32, ebool } from "@fhevm/solidity/lib/FHE.sol";
+```
+
+<Info>
+  All comparison operations return `ebool` (encrypted boolean), not plaintext `bool`. Use `FHE.select()` for conditional logic based on comparison results.
+</Info>
+
+---
+
+## Equal
+
+### FHE.eq()
+
+Check if two encrypted values are equal.
+
+<ParamField path="a" type="euintXX | ebool | eaddress" required>
+  First value (encrypted)
+</ParamField>
+
+<ParamField path="b" type="euintXX | ebool | eaddress | plaintext" required>
+  Second value (encrypted or plaintext, same type as first)
+</ParamField>
+
+<ParamField path="returns" type="ebool">
+  Encrypted boolean: true if equal, false otherwise
+</ParamField>
+
+**Signature**:
+```solidity
+function eq(euintXX a, euintXX b) returns (ebool)
+function eq(euintXX a, uintXX b) returns (ebool)
+function eq(ebool a, ebool b) returns (ebool)
+function eq(eaddress a, eaddress b) returns (ebool)
+```
+
+**Example**:
+```solidity
+contract ComparisonDemo is ZamaEthereumConfig {
+    function checkEqual(uint32 a, uint32 b) external returns (ebool) {
+        euint32 encA = FHE.asEuint32(a);
+        euint32 encB = FHE.asEuint32(b);
+        ebool result = FHE.eq(encA, encB);
+        
+        FHE.allowThis(result);
+        FHE.allow(result, msg.sender);
+        return result;
+    }
+}
+```
+
+**Example (Encrypted vs Plaintext)**:
+```solidity
+// Check if balance equals zero
+ebool isEmpty = FHE.eq(balance, 0);
+
+// Check if addresses match
+ebool isSender = FHE.eq(encryptedRecipient, FHE.asEaddress(msg.sender));
+```
+
+**Gas Cost** (approximate):
+- `euint8`: ~120k gas
+- `euint32`: ~280k gas
+- `euint64`: ~450k gas
+- `euint256`: ~1.4M gas
+- `ebool`: ~120k gas
+
+---
+
+## Not Equal
+
+### FHE.ne()
+
+Check if two encrypted values are not equal.
+
+<ParamField path="a" type="euintXX | ebool | eaddress" required>
+  First value (encrypted)
+</ParamField>
+
+<ParamField path="b" type="euintXX | ebool | eaddress | plaintext" required>
+  Second value (encrypted or plaintext, same type as first)
+</ParamField>
+
+<ParamField path="returns" type="ebool">
+  Encrypted boolean: true if not equal, false otherwise
+</ParamField>
+
+**Signature**:
+```solidity
+function ne(euintXX a, euintXX b) returns (ebool)
+function ne(euintXX a, uintXX b) returns (ebool)
+function ne(ebool a, ebool b) returns (ebool)
+function ne(eaddress a, eaddress b) returns (ebool)
+```
+
+**Example**:
+```solidity
+function checkNotEqual(uint32 a, uint32 b) external returns (ebool) {
+    ebool result = FHE.ne(FHE.asEuint32(a), FHE.asEuint32(b));
+    FHE.allowThis(result);
+    FHE.allow(result, msg.sender);
+    return result;
+}
+```
+
+**Use Case**:
+```solidity
+// Check if user has a non-zero balance
+ebool hasBalance = FHE.ne(balances[user], 0);
+
+// Verify encrypted value is initialized
+require(FHE.isInitialized(value), "Value not set");
+ebool isNonZero = FHE.ne(value, FHE.asEuint64(0));
+```
+
+**Gas Cost**: Same as `FHE.eq()`
+
+<Tip>
+  `FHE.ne(a, b)` is equivalent to `FHE.not(FHE.eq(a, b))` but more efficient.
+</Tip>
+
+---
+
+## Greater Than
+
+### FHE.gt()
+
+Check if the first value is strictly greater than the second.
+
+<ParamField path="a" type="euintXX" required>
+  Left operand (encrypted)
+</ParamField>
+
+<ParamField path="b" type="euintXX | uintXX" required>
+  Right operand (encrypted or plaintext)
+</ParamField>
+
+<ParamField path="returns" type="ebool">
+  Encrypted boolean: true if a > b, false otherwise
+</ParamField>
+
+**Signature**:
+```solidity
+function gt(euintXX a, euintXX b) returns (ebool)
+function gt(euintXX a, uintXX b) returns (ebool)
+```
+
+**Example**:
+```solidity
+function checkGreater(uint32 a, uint32 b) external returns (ebool) {
+    ebool result = FHE.gt(FHE.asEuint32(a), FHE.asEuint32(b));
+    FHE.allowThis(result);
+    FHE.allow(result, msg.sender);
+    return result;
+}
+```
+
+**Example (Balance Check)**:
+```solidity
+function transfer(address to, euint64 amount) internal {
+    // Check if sender has sufficient balance
+    ebool hasEnough = FHE.gt(balances[msg.sender], amount);
+    
+    // Only transfer if sufficient (silent fail otherwise)
+    euint64 actualAmount = FHE.select(hasEnough, amount, FHE.asEuint64(0));
+    
+    balances[msg.sender] = FHE.sub(balances[msg.sender], actualAmount);
+    balances[to] = FHE.add(balances[to], actualAmount);
+}
+```
+
+**Example (Threshold Check)**:
+```solidity
+// Check if user is above minimum stake
+ebool meetsMinimum = FHE.gt(userStake, MIN_STAKE_AMOUNT);
+
+// Check if bid exceeds current highest
+ebool isHigherBid = FHE.gt(newBid, highestBid);
+```
+
+**Gas Cost** (approximate):
+- `euint8`: ~120k gas
+- `euint32`: ~280k gas
+- `euint64`: ~450k gas
+- `euint256`: ~1.4M gas
+
+---
+
+## Greater Than or Equal
+
+### FHE.ge()
+
+Check if the first value is greater than or equal to the second.
+
+<ParamField path="a" type="euintXX" required>
+  Left operand (encrypted)
+</ParamField>
+
+<ParamField path="b" type="euintXX | uintXX" required>
+  Right operand (encrypted or plaintext)
+</ParamField>
+
+<ParamField path="returns" type="ebool">
+  Encrypted boolean: true if a is greater than or equal to b, false otherwise
+</ParamField>
+
+**Signature**:
+```solidity
+function ge(euintXX a, euintXX b) returns (ebool)
+function ge(euintXX a, uintXX b) returns (ebool)
+```
+
+**Example**:
+```solidity
+function checkGreaterOrEqual(uint32 a, uint32 b) external returns (ebool) {
+    ebool result = FHE.ge(FHE.asEuint32(a), FHE.asEuint32(b));
+    FHE.allowThis(result);
+    FHE.allow(result, msg.sender);
+    return result;
+}
+```
+
+**Example (ERC-20 Transfer)**:
+```solidity
+function transfer(address to, externalEuint64 encAmount, bytes calldata proof) external {
+    euint64 amount = FHE.fromExternal(encAmount, proof);
+    
+    // Check if balance >= amount (inclusive)
+    ebool hasBalance = FHE.ge(balances[msg.sender], amount);
+    
+    euint64 newSenderBal = FHE.select(
+        hasBalance,
+        FHE.sub(balances[msg.sender], amount),
+        balances[msg.sender]  // Keep same if insufficient
+    );
+    
+    euint64 newReceiverBal = FHE.select(
+        hasBalance,
+        FHE.add(balances[to], amount),
+        balances[to]  // Keep same if transfer failed
+    );
+    
+    balances[msg.sender] = newSenderBal;
+    balances[to] = newReceiverBal;
+    
+    FHE.allowThis(newSenderBal);
+    FHE.allow(newSenderBal, msg.sender);
+    FHE.allowThis(newReceiverBal);
+    FHE.allow(newReceiverBal, to);
+}
+```
+
+**Gas Cost**: Same as `FHE.gt()`
+
+---
+
+## Less Than
+
+### FHE.lt()
+
+Check if the first value is strictly less than the second.
+
+<ParamField path="a" type="euintXX" required>
+  Left operand (encrypted)
+</ParamField>
+
+<ParamField path="b" type="euintXX | uintXX" required>
+  Right operand (encrypted or plaintext)
+</ParamField>
+
+<ParamField path="returns" type="ebool">
+  Encrypted boolean: true if a < b, false otherwise
+</ParamField>
+
+**Signature**:
+```solidity
+function lt(euintXX a, euintXX b) returns (ebool)
+function lt(euintXX a, uintXX b) returns (ebool)
+```
+
+**Example**:
+```solidity
+function checkLess(uint32 a, uint32 b) external returns (ebool) {
+    ebool result = FHE.lt(FHE.asEuint32(a), FHE.asEuint32(b));
+    FHE.allowThis(result);
+    FHE.allow(result, msg.sender);
+    return result;
+}
+```
+
+**Example (Age Restriction)**:
+```solidity
+// Check if user is under 18
+ebool isMinor = FHE.lt(userAge, 18);
+
+// Deny access if minor
+ebool canAccess = FHE.not(isMinor);
+```
+
+**Example (Auction Bidding)**:
+```solidity
+function bid(euint64 bidAmount) external {
+    // Reject bids below minimum
+    ebool meetsMinimum = FHE.ge(bidAmount, MIN_BID);
+    ebool isBelowMin = FHE.not(meetsMinimum);  // Or: FHE.lt(bidAmount, MIN_BID)
+    
+    // Only process valid bids
+    euint64 validBid = FHE.select(meetsMinimum, bidAmount, FHE.asEuint64(0));
+}
+```
+
+**Gas Cost**: Same as `FHE.gt()`
+
+---
+
+## Less Than or Equal
+
+### FHE.le()
+
+Check if the first value is less than or equal to the second.
+
+<ParamField path="a" type="euintXX" required>
+  Left operand (encrypted)
+</ParamField>
+
+<ParamField path="b" type="euintXX | uintXX" required>
+  Right operand (encrypted or plaintext)
+</ParamField>
+
+<ParamField path="returns" type="ebool">
+  Encrypted boolean: true if a is less than or equal to b, false otherwise
+</ParamField>
+
+**Signature**:
+```solidity
+function le(euintXX a, euintXX b) returns (ebool)
+function le(euintXX a, uintXX b) returns (ebool)
+```
+
+**Example**:
+```solidity
+function checkLessOrEqual(uint32 a, uint32 b) external returns (ebool) {
+    ebool result = FHE.le(FHE.asEuint32(a), FHE.asEuint32(b));
+    FHE.allowThis(result);
+    FHE.allow(result, msg.sender);
+    return result;
+}
+```
+
+**Example (Cap Withdrawal)**:
+```solidity
+function withdraw(euint64 requestedAmount) external {
+    euint64 balance = balances[msg.sender];
+    
+    // Ensure withdrawal doesn't exceed balance
+    ebool withinLimit = FHE.le(requestedAmount, balance);
+    
+    // Withdraw min(requested, balance)
+    euint64 actualAmount = FHE.select(
+        withinLimit,
+        requestedAmount,
+        balance  // Withdraw full balance if request exceeds it
+    );
+    
+    balances[msg.sender] = FHE.sub(balance, actualAmount);
+    FHE.allowThis(balances[msg.sender]);
+    FHE.allow(balances[msg.sender], msg.sender);
+}
+```
+
+**Gas Cost**: Same as `FHE.gt()`
+
+---
+
+## Complete Example: Confidential Voting
+
+```solidity
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import { FHE, euint32, externalEuint32, ebool } from "@fhevm/solidity/lib/FHE.sol";
+import { ZamaEthereumConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
+
+contract ConfidentialVoting is ZamaEthereumConfig {
+    struct Proposal {
+        euint32 yesVotes;
+        euint32 noVotes;
+        uint256 deadline;
+    }
+    
+    mapping(uint256 => Proposal) public proposals;
+    mapping(uint256 => mapping(address => ebool)) private hasVoted;
+    uint256 public proposalCount;
+    
+    /// @notice Create a new proposal
+    function createProposal(uint256 duration) external returns (uint256) {
+        uint256 proposalId = proposalCount++;
+        proposals[proposalId] = Proposal({
+            yesVotes: FHE.asEuint32(0),
+            noVotes: FHE.asEuint32(0),
+            deadline: block.timestamp + duration
+        });
+        return proposalId;
+    }
+    
+    /// @notice Cast encrypted vote
+    function vote(uint256 proposalId, externalEuint32 encVote, bytes calldata proof) external {
+        require(block.timestamp < proposals[proposalId].deadline, "Voting ended");
+        
+        // Convert vote (0 = no, 1 = yes)
+        euint32 voteValue = FHE.fromExternal(encVote, proof);
+        
+        // Check if user already voted (encrypted)
+        ebool alreadyVoted = hasVoted[proposalId][msg.sender];
+        ebool canVote = FHE.not(alreadyVoted);
+        
+        // Only count vote if user hasn't voted
+        euint32 voteToCount = FHE.select(canVote, voteValue, FHE.asEuint32(0));
+        
+        // Check if vote is yes (1) or no (0)
+        ebool isYes = FHE.eq(voteToCount, 1);
+        
+        // Increment appropriate counter
+        euint32 yesToAdd = FHE.select(isYes, FHE.asEuint32(1), FHE.asEuint32(0));
+        euint32 noToAdd = FHE.select(isYes, FHE.asEuint32(0), FHE.asEuint32(1));
+        
+        proposals[proposalId].yesVotes = FHE.add(proposals[proposalId].yesVotes, yesToAdd);
+        proposals[proposalId].noVotes = FHE.add(proposals[proposalId].noVotes, noToAdd);
+        
+        // Mark as voted
+        hasVoted[proposalId][msg.sender] = FHE.or(hasVoted[proposalId][msg.sender], canVote);
+        
+        // Set ACL
+        FHE.allowThis(proposals[proposalId].yesVotes);
+        FHE.allowThis(proposals[proposalId].noVotes);
+        FHE.allowThis(hasVoted[proposalId][msg.sender]);
+    }
+    
+    /// @notice Check if proposal passed (requires decryption)
+    function didPass(uint256 proposalId) external view returns (ebool) {
+        Proposal memory p = proposals[proposalId];
+        return FHE.gt(p.yesVotes, p.noVotes);
+    }
+}
+```
+
+---
+
+## Use Cases
+
+### 1. Balance Checks
+
+```solidity
+// Ensure sufficient balance before transfer
+ebool canTransfer = FHE.ge(balance, amount);
+euint64 toTransfer = FHE.select(canTransfer, amount, FHE.asEuint64(0));
+```
+
+### 2. Threshold Validation
+
+```solidity
+// Check if stake meets minimum requirement
+ebool meetsMinimum = FHE.ge(userStake, MIN_STAKE);
+
+// Check if value is within range
+ebool inRange = FHE.and(
+    FHE.ge(value, minValue),
+    FHE.le(value, maxValue)
+);
+```
+
+### 3. Auction Bidding
+
+```solidity
+// Update highest bid if new bid is higher
+ebool isHigher = FHE.gt(newBid, highestBid);
+highestBid = FHE.select(isHigher, newBid, highestBid);
+highestBidder = FHE.select(isHigher, FHE.asEaddress(msg.sender), highestBidder);
+```
+
+### 4. Access Control
+
+```solidity
+// Check if user's clearance level is sufficient
+ebool hasAccess = FHE.ge(userClearance, REQUIRED_CLEARANCE);
+```
+
+---
+
+## Comparison Patterns
+
+### Pattern 1: Range Check
+
+```solidity
+// Check if value is in range [min, max]
+function isInRange(euint32 value, uint32 min, uint32 max) 
+    internal 
+    returns (ebool) 
+{
+    ebool aboveMin = FHE.ge(value, min);
+    ebool belowMax = FHE.le(value, max);
+    ebool inRange = FHE.and(aboveMin, belowMax);
+    
+    FHE.allowThis(inRange);
+    return inRange;
+}
+```
+
+### Pattern 2: Multi-Condition Check
+
+```solidity
+// Check multiple conditions (all must be true)
+function checkEligibility(address user) internal returns (ebool) {
+    ebool hasBalance = FHE.gt(balances[user], MIN_BALANCE);
+    ebool isActive = activeUsers[user];
+    ebool notBlacklisted = FHE.not(blacklisted[user]);
+    
+    ebool eligible = FHE.and(FHE.and(hasBalance, isActive), notBlacklisted);
+    FHE.allowThis(eligible);
+    return eligible;
+}
+```
+
+### Pattern 3: Clamping with Comparisons
+
+```solidity
+// Clamp value between min and max using comparisons
+function clamp(euint32 value, uint32 min, uint32 max) 
+    internal 
+    returns (euint32) 
+{
+    ebool tooLow = FHE.lt(value, min);
+    ebool tooHigh = FHE.gt(value, max);
+    
+    euint32 raised = FHE.select(tooLow, FHE.asEuint32(min), value);
+    euint32 clamped = FHE.select(tooHigh, FHE.asEuint32(max), raised);
+    
+    FHE.allowThis(clamped);
+    return clamped;
+}
+```
+
+---
+
+## Gas Optimization
+
+### 1. Use Plaintext Operands
+
+```solidity
+// ❌ More expensive (2 FHE operations)
+ebool isAboveThreshold = FHE.gt(value, FHE.asEuint32(100));
+
+// ✅ Cheaper (1 FHE operation, 30% less gas)
+ebool isAboveThreshold = FHE.gt(value, 100);
+```
+
+### 2. Cache Comparison Results
+
+```solidity
+// ❌ Recomputes comparison twice
+euint64 result1 = FHE.select(FHE.gt(a, b), x, y);
+euint64 result2 = FHE.select(FHE.gt(a, b), m, n);
+
+// ✅ Compute once, reuse
+ebool isGreater = FHE.gt(a, b);
+euint64 result1 = FHE.select(isGreater, x, y);
+euint64 result2 = FHE.select(isGreater, m, n);
+```
+
+### 3. Use FHE.min/max Instead of Compare + Select
+
+```solidity
+// ❌ Manual comparison
+ebool isSmaller = FHE.lt(a, b);
+euint32 minimum = FHE.select(isSmaller, a, b);
+
+// ✅ Built-in function (same gas, cleaner)
+euint32 minimum = FHE.min(a, b);
+```
+
+---
+
+## Important Notes
+
+<Warning>
+  **Never use comparison results in plaintext `if` statements**. All comparisons return `ebool`, not plaintext `bool`. Use `FHE.select()` for conditional logic.
+</Warning>
+
+<Info>
+  **Gas Cost**: Comparison operations cost 50-150% more than arithmetic operations due to the complexity of encrypted comparisons.
+</Info>
+
+<Tip>
+  **Mixed Operations**: Comparing encrypted values with plaintext constants is 30-40% cheaper than comparing two encrypted values.
+</Tip>
+
+---
+
+## Related
+
+- [Conditional Logic](/api/conditional) - Use comparison results with `FHE.select()`
+- [Arithmetic Operations](/api/arithmetic) - Perform calculations on encrypted values
+- [Bitwise Operations](/api/bitwise) - Logical operations on encrypted booleans
+- [Gas Costs](/api/gas-costs) - Detailed cost analysis

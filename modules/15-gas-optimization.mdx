@@ -1,0 +1,538 @@
+---
+title: "Gas Optimization for FHE"
+description: "Master gas optimization patterns for FHE contracts where encrypted operations cost 100x more than plaintext equivalents"
+---
+
+## Learning Objectives
+
+By the end of this module, you will:
+
+1. Understand the gas cost model for FHE operations
+2. Choose the right encrypted type size for each use case
+3. Apply optimization patterns to reduce gas consumption by 30-70%
+4. Profile and benchmark FHE contract gas usage
+5. Identify and eliminate unnecessary encrypted operations
+
+## Why Gas Optimization is Critical for FHE
+
+In traditional Solidity, a plaintext addition costs roughly **3-5 gas**. An encrypted addition (`FHE.add(euint32, euint32)`) costs approximately **90,000 gas** — a factor of **20,000x** more expensive.
+
+<Warning>
+Without optimization, a single FHE-heavy transaction can:
+- Cost tens or hundreds of dollars in gas fees on mainnet
+- Exceed the block gas limit (30M) with just 300 operations
+- Drive users away due to poor UX
+</Warning>
+
+The good news: there are concrete, repeatable patterns that can reduce your FHE gas costs by **30-70%** without changing your contract's logic.
+
+## FHE Gas Cost Reference
+
+### Complete Gas Cost Table
+
+| Operation | euint8 | euint16 | euint32 | euint64 | euint128 | euint256 |
+|-----------|--------|---------|---------|---------|----------|----------|
+| `FHE.add` (enc+enc) | ~50k | ~65k | ~90k | ~130k | ~180k | ~250k |
+| `FHE.add` (enc+plain) | ~35k | ~45k | ~65k | ~95k | ~135k | ~190k |
+| `FHE.sub` (enc-enc) | ~50k | ~65k | ~90k | ~130k | ~180k | ~250k |
+| `FHE.mul` (enc*enc) | ~120k | ~150k | ~200k | ~300k | ~450k | ~600k |
+| `FHE.mul` (enc*plain) | ~80k | ~100k | ~140k | ~210k | ~320k | ~430k |
+| `FHE.div` (enc/plain) | ~50k | ~65k | ~90k | ~130k | ~180k | ~250k |
+| `FHE.select` | ~45k | ~50k | ~60k | ~80k | ~110k | ~150k |
+| `FHE.eq` / `FHE.ne` | ~45k | ~50k | ~60k | ~80k | ~110k | ~150k |
+| `FHE.gt` / `FHE.lt` | ~45k | ~50k | ~60k | ~80k | ~110k | ~150k |
+| `FHE.min` / `FHE.max` | ~90k | ~100k | ~120k | ~160k | ~220k | ~300k |
+
+<Tip>
+**Key Observations:**
+- Multiplication is 2x more expensive than addition
+- Plaintext operands are 25-35% cheaper than encrypted-encrypted
+- Larger types cost more — euint64 is ~2-3x euint8 cost
+- Bitwise operations are the cheapest (~30-60k)
+</Tip>
+
+## Optimization Strategy 1: Choose the Right Type Size
+
+This is the **simplest and most impactful** optimization. If a value is guaranteed to fit in 8 bits, use `euint8` instead of `euint32` or `euint64`.
+
+### Right-Sized Types
+
+| Data | Range | Best Type |
+|------|-------|----------|
+| Age | 0 – 255 | `euint8` |
+| Percentage | 0 – 100 | `euint8` |
+| Year | 2000 – 2100 | `euint16` |
+| Token balance | 0 – 2^64 | `euint64` |
+| Vote count (small DAO) | 0 – 65535 | `euint16` |
+| Boolean flag | 0 or 1 | `ebool` |
+
+### Code Example
+
+<CodeGroup>
+```solidity Inefficient
+// INEFFICIENT: uses euint64 for age (0-255)
+euint64 private _age;
+
+function setAge(uint64 age) external {
+    _age = FHE.asEuint64(age);           // ~65k gas for cast
+    _age = FHE.add(_age, FHE.asEuint64(1)); // ~130k gas for add
+    // Total: ~195k gas
+}
+```
+
+```solidity Optimized
+// OPTIMIZED: uses euint8 for age
+euint8 private _age;
+
+function setAge(uint8 age) external {
+    _age = FHE.asEuint8(age);            // ~30k gas for cast
+    _age = FHE.add(_age, 1);             // ~35k gas for add (plaintext!)
+    // Total: ~65k gas -- 67% savings!
+}
+```
+</CodeGroup>
+
+## Optimization Strategy 2: Use Plaintext Operands
+
+When one operand is a known constant or a value that doesn't need to be secret, pass it as plaintext. The FHE coprocessor can optimize the circuit when one operand is in the clear.
+
+### The Rule
+
+If the second operand is **not secret**, always pass it as plaintext:
+
+<CodeGroup>
+```solidity Inefficient
+// INEFFICIENT: encrypts a known constant, then adds
+euint32 enc = FHE.asEuint32(value);
+euint32 ten = FHE.asEuint32(10);     // unnecessary encryption
+euint32 result = FHE.add(enc, ten);   // enc+enc: ~90k gas
+// Total: ~135k gas (45k cast + 90k add)
+```
+
+```solidity Optimized
+// OPTIMIZED: plaintext second operand
+euint32 enc = FHE.asEuint32(value);
+euint32 result = FHE.add(enc, 10);    // enc+plain: ~65k gas
+// Total: ~110k gas (45k cast + 65k add) -- 19% savings!
+```
+</CodeGroup>
+
+### Which Operations Support Plaintext Operands?
+
+All of the following accept a plaintext as the second (right-hand) operand:
+
+- **Arithmetic:** `add`, `sub`, `mul`, `rem`
+- **Comparison:** `eq`, `ne`, `lt`, `le`, `gt`, `ge`
+- **Min/Max:** `min`, `max`
+- **Bitwise:** `and`, `or`, `xor`
+- **Shift/Rotate:** `shl`, `shr`, `rotl`, `rotr`
+
+<Note>
+**Division** (`div`) already requires a plaintext divisor — you cannot divide by an encrypted value.
+</Note>
+
+## Optimization Strategy 3: Minimize FHE Operations
+
+Every FHE operation has a significant fixed cost. Reducing the total number of operations is often more impactful than optimizing individual ones.
+
+### Combine Conditions
+
+<CodeGroup>
+```solidity Inefficient
+// INEFFICIENT: 2 comparisons + 2 selects = 4 FHE ops
+ebool tooLow = FHE.lt(enc, minVal);
+euint32 step1 = FHE.select(tooLow, minVal, enc);
+ebool tooHigh = FHE.gt(step1, maxVal);
+euint32 result = FHE.select(tooHigh, maxVal, step1);
+// 4 FHE ops: ~240k gas
+```
+
+```solidity Optimized
+// OPTIMIZED: 2 built-in ops
+euint32 result = FHE.min(FHE.max(enc, minVal), maxVal);
+// 2 FHE ops: ~240k gas
+// Same gas in this case, but simpler code and fewer storage writes
+```
+</CodeGroup>
+
+### Pre-compute in Plaintext
+
+Anything that can be computed in plaintext **should** be computed in plaintext:
+
+<CodeGroup>
+```solidity Inefficient
+// INEFFICIENT: computes discount in encrypted space
+euint32 price = FHE.asEuint32(100);
+euint32 discountRate = FHE.asEuint32(10);
+euint32 discountAmount = FHE.mul(price, discountRate);
+euint32 finalPrice = FHE.sub(price, FHE.div(discountAmount, 100));
+// 4 FHE ops!
+```
+
+```solidity Optimized
+// OPTIMIZED: apply 10% discount = multiply by 90/100
+euint32 price = FHE.asEuint32(100);
+euint32 finalPrice = FHE.mul(price, 90);
+finalPrice = FHE.div(finalPrice, 100);
+// 2 FHE ops -- 50% fewer operations
+```
+</CodeGroup>
+
+## Optimization Strategy 4: Batch Processing
+
+In traditional Solidity, individual transactions are cheap. With FHE, each transaction has base overhead (21,000 gas + contract call overhead). Batching multiple updates into a single transaction amortizes this overhead.
+
+### Example: Updating Multiple Balances
+
+<CodeGroup>
+```solidity Inefficient
+// INEFFICIENT: three separate transactions
+function updateBalanceA(uint32 amount) external {
+    _balanceA = FHE.add(_balanceA, amount);
+    FHE.allowThis(_balanceA);
+    FHE.allow(_balanceA, msg.sender);
+}
+// 3 transactions: 3 x 21k base + 3 x FHE ops
+```
+
+```solidity Optimized
+// OPTIMIZED: one batched transaction
+function updateAllBalances(uint32 amtA, uint32 amtB, uint32 amtC) external {
+    _balanceA = FHE.add(_balanceA, amtA);
+    _balanceB = FHE.add(_balanceB, amtB);
+    _balanceC = FHE.add(_balanceC, amtC);
+    FHE.allowThis(_balanceA);
+    FHE.allowThis(_balanceB);
+    FHE.allowThis(_balanceC);
+    FHE.allow(_balanceA, msg.sender);
+    FHE.allow(_balanceB, msg.sender);
+    FHE.allow(_balanceC, msg.sender);
+}
+// 1 transaction: 1 x 21k base + 3 x FHE ops
+// Saves ~42k gas from avoided transaction overhead
+```
+</CodeGroup>
+
+## Optimization Strategy 5: Caching and Storage Trade-offs
+
+If an encrypted value is computed from other encrypted values, and those source values don't change often, **cache the result** instead of recomputing it every time.
+
+### Example: Tax Rate Calculation
+
+<CodeGroup>
+```solidity Inefficient
+// INEFFICIENT: recomputes tax rate every call
+function applyTax(uint32 price) external {
+    euint32 baseTax   = FHE.asEuint32(10);
+    euint32 surcharge = FHE.asEuint32(5);
+    euint32 taxRate   = FHE.add(baseTax, surcharge); // recomputed!
+    euint32 encPrice  = FHE.asEuint32(price);
+    _result = FHE.mul(encPrice, taxRate);
+    // 4 FHE ops: ~375k gas
+}
+```
+
+```solidity Optimized
+// OPTIMIZED: cache the tax rate, computed once
+euint32 private _cachedTaxRate;
+
+function setupTaxRate() external onlyOwner {
+    euint32 baseTax   = FHE.asEuint32(10);
+    euint32 surcharge = FHE.asEuint32(5);
+    _cachedTaxRate = FHE.add(baseTax, surcharge);
+    FHE.allowThis(_cachedTaxRate);
+    // One-time cost: ~170k gas
+}
+
+function applyTax(uint32 price) external {
+    euint32 encPrice = FHE.asEuint32(price);
+    _result = FHE.mul(encPrice, _cachedTaxRate);
+    // Per-call cost: ~245k gas (35% savings per call!)
+}
+```
+</CodeGroup>
+
+### The Storage Trade-off
+
+Storing an encrypted value in a state variable (`SSTORE`) costs gas too — roughly 20,000 gas for a new slot, 5,000 for an update. The trade-off:
+
+| Scenario | Better Approach |
+|----------|----------------|
+| Value recomputed 1-2 times | Recompute (storage cost not worth it) |
+| Value recomputed 3+ times | Cache it (amortized savings exceed storage cost) |
+| Value changes every block | Recompute (cache invalidated immediately) |
+| Value changes rarely | Cache it (big win) |
+
+## Optimization Strategy 6: Lazy Evaluation
+
+Lazy evaluation means deferring an expensive computation until its result is actually needed. If the result may never be needed, you save the cost entirely.
+
+### Example: Deferred Squaring
+
+<CodeGroup>
+```solidity Inefficient
+// INEFFICIENT: computes square immediately on every update
+function updateValue(uint32 value) external {
+    euint32 enc = FHE.asEuint32(value);
+    euint32 squared = FHE.mul(enc, enc);    // expensive!
+    _result = FHE.add(squared, 1);
+    // 3 FHE ops every call
+}
+```
+
+```solidity Optimized
+// OPTIMIZED: stores the base value, defers the expensive part
+euint32 private _base;
+bool private _dirty;
+
+function updateValue(uint32 value) external {
+    _base = FHE.asEuint32(value);
+    FHE.allowThis(_base);
+    _dirty = true;
+    // 1 FHE op -- defers the mul
+}
+
+function computeResult() external {
+    require(_dirty, "Nothing to compute");
+    euint32 squared = FHE.mul(_base, _base);
+    _result = FHE.add(squared, 1);
+    _dirty = false;
+    // 2 FHE ops -- only when result is actually needed
+}
+```
+</CodeGroup>
+
+If `updateValue` is called 10 times before `computeResult` is called once, you save 9 multiplications worth of gas (9 x ~200k = ~1.8M gas saved).
+
+## Gas Profiling Technique
+
+You cannot optimize what you cannot measure. Here's how to profile FHE gas usage in your Hardhat tests.
+
+### Using `receipt.gasUsed`
+
+```typescript
+it("should measure gas for an FHE operation", async function () {
+  const tx = await contract.someFunction(42);
+  const receipt = await tx.wait();
+  console.log(`Gas used: ${receipt.gasUsed}`);
+});
+```
+
+### Comparing Two Implementations
+
+```typescript
+it("should compare inefficient vs optimized", async function () {
+  const tx1 = await contract.inefficient_version(42);
+  const receipt1 = await tx1.wait();
+
+  const tx2 = await contract.optimized_version(42);
+  const receipt2 = await tx2.wait();
+
+  const savings = receipt1.gasUsed - receipt2.gasUsed;
+  const pct = (Number(savings) * 100) / Number(receipt1.gasUsed);
+  console.log(`Savings: ${savings} gas (${pct.toFixed(1)}%)`);
+});
+```
+
+### Setting Gas Budgets
+
+For production contracts, establish maximum gas budgets per function:
+
+```typescript
+it("transfer should use less than 500k gas", async function () {
+  const tx = await contract.transfer(recipient, 100);
+  const receipt = await tx.wait();
+  expect(receipt.gasUsed).to.be.lessThan(500_000n);
+});
+```
+
+This acts as a regression test: if a future refactor accidentally adds FHE operations, the test will fail.
+
+## Real-World Example: Optimizing a Confidential ERC-20 Transfer
+
+Let's walk through a realistic optimization of a confidential token transfer function.
+
+<Accordion title="Before: Naive Implementation">
+```solidity
+function transfer(address to, uint32 amount) external {
+    euint32 encAmount = FHE.asEuint32(amount);
+
+    // Check balance >= amount (encrypted comparison)
+    ebool hasEnough = FHE.ge(_balances[msg.sender], encAmount);
+
+    // Compute new balances
+    euint32 newSenderBal   = FHE.sub(_balances[msg.sender], encAmount);
+    euint32 newReceiverBal = FHE.add(_balances[to], encAmount);
+
+    // Conditionally apply (if balance was sufficient)
+    _balances[msg.sender] = FHE.select(hasEnough, newSenderBal, _balances[msg.sender]);
+    _balances[to]         = FHE.select(hasEnough, newReceiverBal, _balances[to]);
+
+    // ACL
+    FHE.allowThis(_balances[msg.sender]);
+    FHE.allow(_balances[msg.sender], msg.sender);
+    FHE.allowThis(_balances[to]);
+    FHE.allow(_balances[to], to);
+}
+// Operations: 1 cast + 1 ge + 1 sub + 1 add + 2 select = 6 FHE ops
+// Estimated gas: ~45k + ~60k + ~90k + ~90k + ~120k = ~405k
+```
+</Accordion>
+
+<Accordion title="After: Optimized Implementation">
+```solidity
+function transfer(address to, uint32 amount) external {
+    // Use plaintext operand for the amount (no cast needed for comparisons/arithmetic)
+    ebool hasEnough = FHE.ge(_balances[msg.sender], amount);  // enc vs plain
+
+    euint32 newSenderBal   = FHE.sub(_balances[msg.sender], amount);  // enc - plain
+    euint32 newReceiverBal = FHE.add(_balances[to], amount);           // enc + plain
+
+    _balances[msg.sender] = FHE.select(hasEnough, newSenderBal, _balances[msg.sender]);
+    _balances[to]         = FHE.select(hasEnough, newReceiverBal, _balances[to]);
+
+    FHE.allowThis(_balances[msg.sender]);
+    FHE.allow(_balances[msg.sender], msg.sender);
+    FHE.allowThis(_balances[to]);
+    FHE.allow(_balances[to], to);
+}
+// Operations: 1 ge(plain) + 1 sub(plain) + 1 add(plain) + 2 select = 5 FHE ops
+// Estimated gas: ~45k + ~65k + ~65k + ~120k = ~295k
+// Savings: ~110k gas (27%)
+```
+</Accordion>
+
+The only change: we removed the `FHE.asEuint32(amount)` cast and used the plaintext `amount` directly as the second operand. This eliminated the cast entirely and made the arithmetic operations cheaper.
+
+## Optimization Checklist
+
+Use this checklist when reviewing your FHE contracts:
+
+<Steps>
+  <Step title="Right-sized types?">
+    Are you using the smallest encrypted type that fits your data?
+  </Step>
+  <Step title="Plaintext operands?">
+    For every FHE operation, is the second operand truly secret? If not, pass it as plaintext.
+  </Step>
+  <Step title="Minimum operations?">
+    Can any FHE operations be eliminated by refactoring or pre-computing in plaintext?
+  </Step>
+  <Step title="Batch updates?">
+    Are there multiple state changes that can be combined into a single transaction?
+  </Step>
+  <Step title="Cached intermediates?">
+    Are there encrypted values being recomputed that could be stored?
+  </Step>
+  <Step title="Lazy evaluation?">
+    Are there expensive computations that can be deferred?
+  </Step>
+  <Step title="Redundant comparisons?">
+    Can `gt + select` be replaced with `max`? Can `lt + select` be replaced with `min`?
+  </Step>
+  <Step title="Unnecessary casts?">
+    Are you calling `FHE.asEuintXX()` on values that could be passed as plaintext operands directly?
+  </Step>
+  <Step title="Gas budget tests?">
+    Do your tests verify that key functions stay within a gas budget?
+  </Step>
+  <Step title="Profiled?">
+    Have you measured actual gas usage with `receipt.gasUsed`?
+  </Step>
+</Steps>
+
+## Common Anti-Patterns
+
+### Anti-Pattern 1: "Encrypt Everything"
+
+```solidity
+// BAD: encrypts the contract owner address check
+ebool isOwner = FHE.eq(FHE.asEuint32(uint32(uint160(msg.sender))),
+                       FHE.asEuint32(uint32(uint160(owner))));
+
+// GOOD: owner is public, use plaintext
+require(msg.sender == owner, "Not owner");
+```
+
+### Anti-Pattern 2: "One Operation Per Transaction"
+
+```solidity
+// BAD: separate transactions for each step
+function step1_addBalance(uint32 amt) external { ... }
+function step2_checkLimit() external { ... }
+function step3_applyFee() external { ... }
+
+// GOOD: combine into one
+function updateBalance(uint32 amt) external {
+    // add + check + fee in one transaction
+}
+```
+
+### Anti-Pattern 3: "Ignoring Type Sizes"
+
+```solidity
+// BAD: using euint256 for a boolean flag
+euint256 private _isActive;
+
+// GOOD: use ebool
+ebool private _isActive;
+```
+
+### Anti-Pattern 4: "Recomputing Constants"
+
+```solidity
+// BAD: encrypts "100" every time the function is called
+function applyPercent(euint32 value) internal returns (euint32) {
+    return FHE.div(FHE.mul(value, FHE.asEuint32(percentage)), FHE.asEuint32(100));
+}
+
+// GOOD: use plaintext for the constant 100
+function applyPercent(euint32 value) internal returns (euint32) {
+    return FHE.div(FHE.mul(value, percentage), 100);
+}
+```
+
+## Summary of Gas Savings by Pattern
+
+| Pattern | Typical Savings | Difficulty |
+|---------|----------------|------------|
+| Right-sized types | 30-60% | Easy |
+| Plaintext operands | 15-35% | Easy |
+| Minimize operations | 20-80% | Medium |
+| Batch processing | 10-20% (tx overhead) | Easy |
+| Caching | 25-50% (on repeated calls) | Medium |
+| Lazy evaluation | 0-90% (depends on access pattern) | Hard |
+| Redundant select elimination | 10-30% | Medium |
+| Avoid unnecessary casts | 5-15% | Easy |
+
+## Key Takeaways
+
+<CardGroup cols={2}>
+  <Card title="FHE operations cost 10-100x more" icon="bolt">
+    Optimization is not optional — it's essential for practical FHE contracts.
+  </Card>
+  <Card title="Use plaintext operands" icon="check">
+    The single biggest win — requires zero architectural changes.
+  </Card>
+  <Card title="Right-size types" icon="arrows-minimize">
+    Second easiest win — use euint8 when 8 bits suffice.
+  </Card>
+  <Card title="Measure gas" icon="chart-line">
+    Always measure with `receipt.gasUsed` before and after optimizing.
+  </Card>
+</CardGroup>
+
+<Note>
+Before encrypting a value, ask yourself: **"Does this actually need to be secret?"**
+</Note>
+
+## Reference Contracts
+
+- **GasOptimized.sol** (`contracts/15-gas-optimization/GasOptimized.sol:1`) — Before/after optimization patterns
+- **GasBenchmark.sol** (`contracts/15-gas-optimization/GasBenchmark.sol:1`) — Isolated benchmarks for individual FHE operations
+
+## Next Steps
+
+In the exercise for this module, you'll be given a deliberately inefficient confidential token contract. Your task is to apply the patterns from this lesson to reduce its gas consumption by at least 30%.
+
+Next: [Module 16: Security Best Practices →](/modules/16-security-best-practices)

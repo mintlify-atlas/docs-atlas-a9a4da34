@@ -1,0 +1,317 @@
+---
+title: "Decryption Patterns"
+description: "Retrieve plaintext values from encrypted data — public decryption and user-specific reencryption"
+icon: "unlock"
+---
+
+## Overview
+
+Encrypted data is only useful if you can eventually act on the plaintext. FHEVM provides two primary decryption approaches:
+
+1. **Public decryption** — Make the encrypted value decryptable by everyone
+2. **User-specific decryption** — Grant individual users access via ACL
+
+## Why Decrypt?
+
+Encrypted values are useful for computation, but eventually results need to be revealed:
+
+- **Vote outcomes** — After tallying, the results should be public
+- **Auction winners** — The winning bid needs to be announced
+- **Private balances** — Users need to see their own balance
+- **Game results** — The outcome must eventually be known
+
+<Info>
+**Key question:** Who should see the decrypted value?
+</Info>
+
+## Approach 1: Public Decryption
+
+### Using `FHE.makePubliclyDecryptable()`
+
+When a result should be visible to **everyone**:
+
+```solidity PublicDecrypt.sol
+contract VoteRevealer is ZamaEthereumConfig {
+    euint32 private _yesVotes;
+    euint32 private _noVotes;
+    bool public isPubliclyDecryptable;
+
+    function makePublic() external {
+        require(!isPubliclyDecryptable, "Already revealed");
+        FHE.makePubliclyDecryptable(_yesVotes);
+        FHE.makePubliclyDecryptable(_noVotes);
+        isPubliclyDecryptable = true;
+    }
+}
+```
+
+<Warning>
+**Irreversible:** `FHE.makePubliclyDecryptable()` is permanent. Once a value is marked for public decryption, it cannot be made private again.
+
+Only use this for:
+- ✅ Vote results, auction outcomes, game results
+- ❌ Individual user data (balances, personal info)
+</Warning>
+
+### Complete Example: PublicDecrypt.sol
+
+```solidity PublicDecrypt.sol
+contract PublicDecrypt is ZamaEthereumConfig {
+    euint32 private _encryptedValue;
+    bool public hasValue;
+    bool public isPubliclyDecryptable;
+
+    // Store a value — grant ACL to sender (user-specific decrypt)
+    function setValue(uint32 value) external {
+        _encryptedValue = FHE.asEuint32(value);
+        FHE.allowThis(_encryptedValue);
+        FHE.allow(_encryptedValue, msg.sender);  // User can decrypt
+        hasValue = true;
+    }
+
+    // Make it public — anyone can decrypt
+    function makePublic() external {
+        require(hasValue, "No value set");
+        FHE.makePubliclyDecryptable(_encryptedValue);
+        isPubliclyDecryptable = true;
+    }
+
+    // Return handle for off-chain decryption
+    function getEncryptedValue() external view returns (euint32) {
+        return _encryptedValue;
+    }
+}
+```
+
+**Flow:**
+1. User calls `setValue(42)` → value is encrypted, only they can decrypt
+2. User calls `makePublic()` → now ANYONE can decrypt the value
+3. Any user calls `getEncryptedValue()` → gets the handle → decrypts off-chain
+
+## Approach 2: User-Specific Decryption
+
+### ACL + Reencryption Pattern
+
+When only a **specific user** should see their data:
+
+#### Step 1: Grant ACL Access (Contract Side)
+
+```solidity UserDecrypt.sol
+function storeSecret(externalEuint32 encValue, bytes calldata inputProof) external {
+    _userSecrets[msg.sender] = FHE.fromExternal(encValue, inputProof);
+    FHE.allowThis(_userSecrets[msg.sender]);    // Contract can use it
+    FHE.allow(_userSecrets[msg.sender], msg.sender);  // User can decrypt it
+}
+
+function getMySecret() external view returns (euint32) {
+    require(FHE.isSenderAllowed(_userSecrets[msg.sender]), "No access");
+    return _userSecrets[msg.sender];
+}
+```
+
+#### Step 2: Decrypt (Client Side)
+
+**In Hardhat Tests:**
+
+```typescript
+import { fhevm } from "hardhat";
+import { FhevmType } from "@fhevm/hardhat-plugin";
+
+const handle = await contract.getMySecret();
+const plaintext = await fhevm.userDecryptEuint(
+    FhevmType.euint32,
+    handle,
+    contractAddress,
+    signer
+);
+expect(plaintext).to.equal(42n);
+
+// For ebool:
+const boolHandle = await contract.getFlag();
+const boolValue = await fhevm.userDecryptEbool(
+    boolHandle,
+    contractAddress,
+    signer
+);
+expect(boolValue).to.equal(true);
+```
+
+**In Browser (Relayer SDK):**
+
+```javascript
+const { publicKey, privateKey } = instance.generateKeypair();
+const eip712 = instance.createEIP712(publicKey, contractAddress);
+const signature = await signer.signTypedData(
+    eip712.domain,
+    { Reencrypt: eip712.types.Reencrypt },
+    eip712.message
+);
+
+const handle = await contract.getMySecret();
+const plaintext = await instance.reencrypt(
+    handle,
+    privateKey,
+    publicKey,
+    signature,
+    contractAddress,
+    await signer.getAddress()
+);
+```
+
+## Secret Sharing Pattern
+
+```solidity UserDecrypt.sol
+mapping(address => euint32) private _userSecrets;
+
+// Share secret with another address
+function shareSecret(address to) external {
+    require(euint32.unwrap(_userSecrets[msg.sender]) != 0, "No secret stored");
+    FHE.allow(_userSecrets[msg.sender], to);
+}
+
+// Get another user's secret (requires ACL access via shareSecret)
+function getSharedSecret(address owner) external view returns (euint32) {
+    require(euint32.unwrap(_userSecrets[owner]) != 0, "No secret stored");
+    require(FHE.isSenderAllowed(_userSecrets[owner]), "Not authorized");
+    return _userSecrets[owner];
+}
+```
+
+**Key Pattern:**
+- Alice stores a secret → only Alice can decrypt
+- Alice calls `shareSecret(bob)` → now Bob can also decrypt Alice's secret
+- Bob uses `fhevm.userDecryptEuint()` to see the value
+
+## Comparing the Two Approaches
+
+| Feature | makePubliclyDecryptable | User Reencryption |
+|---------|------------------------|-------------------|
+| Who sees plaintext? | Everyone | Only the authorized user |
+| On-chain call | `FHE.makePubliclyDecryptable(handle)` | `FHE.allow(handle, user)` |
+| Client-side | Anyone can read | User calls reencrypt |
+| Reversible? | No | ACL can be revoked (new handle) |
+| Use case | Vote results, auction outcomes | Private balances, secrets |
+| Hardhat test | `fhevm.userDecryptEuint()` | `fhevm.userDecryptEuint()` |
+
+## Hardhat Test Patterns
+
+### Testing Public Decryption
+
+```typescript
+it("should make value publicly decryptable", async function () {
+    await contract.setValue(42);
+    await contract.makePublic();
+
+    // After makePubliclyDecryptable, the value can be decrypted
+    const handle = await contract.getEncryptedValue();
+    const value = await fhevm.userDecryptEuint(
+        FhevmType.euint32,
+        handle,
+        contractAddress,
+        deployer
+    );
+    expect(value).to.equal(42n);
+});
+```
+
+### Testing User-Specific Decryption
+
+```typescript
+it("should decrypt own secret", async function () {
+    const enc = await fhevm
+        .createEncryptedInput(contractAddress, alice.address)
+        .add32(999)
+        .encrypt();
+    await contract.connect(alice).storeSecret(enc.handles[0], enc.inputProof);
+
+    const handle = await contract.connect(alice).getMySecret();
+    const value = await fhevm.userDecryptEuint(
+        FhevmType.euint32,
+        handle,
+        contractAddress,
+        alice
+    );
+    expect(value).to.equal(999n);
+});
+```
+
+## Security Considerations
+
+### Do Not Decrypt Unnecessarily
+
+Every decryption reveals information. Minimize decryptions to preserve privacy:
+
+```solidity
+// ❌ BAD: Making value public just to compare
+function isRichBad() public {
+    FHE.makePubliclyDecryptable(_balance);  // Reveals exact balance!
+}
+
+// ✅ GOOD: Keep the comparison encrypted
+function isRich() public view returns (ebool) {
+    return FHE.gt(_balance, FHE.asEuint64(1000));  // No value revealed
+}
+```
+
+### Information Leakage
+
+- `makePubliclyDecryptable` reveals the EXACT value — use only when necessary
+- Even partial information (e.g., "balance > 1000") reveals something
+- Consider whether you really need to decrypt, or can keep working with encrypted values
+
+## Common Mistakes
+
+### Mistake 1: Forgetting ACL Before Decryption
+
+```solidity
+// ❌ BUG: User can't decrypt — no ACL granted
+function storeValue(uint32 val) external {
+    _value = FHE.asEuint32(val);
+    FHE.allowThis(_value);
+    // MISSING: FHE.allow(_value, msg.sender);
+}
+```
+
+### Mistake 2: Making Sensitive Data Public
+
+```solidity
+// ❌ DANGEROUS: Reveals everyone's balance!
+function revealAllBalances() external {
+    for (...) {
+        FHE.makePubliclyDecryptable(_balances[user]); // Privacy violation!
+    }
+}
+```
+
+### Mistake 3: Not Checking isSenderAllowed in Getters
+
+```solidity
+// ❌ BAD: Returns handle without access check
+function getBalance() view returns (euint64) {
+    return _balances[msg.sender]; // No ACL check!
+}
+
+// ✅ GOOD: Check access first
+function getBalance() view returns (euint64) {
+    require(FHE.isSenderAllowed(_balances[msg.sender]), "No access");
+    return _balances[msg.sender];
+}
+```
+
+## Summary
+
+| Pattern | When to Use | How |
+|---------|-------------|-----|
+| **Public decryption** | Result should be visible to all | `FHE.makePubliclyDecryptable(handle)` |
+| **User reencryption** | Only the user should see | `FHE.allow(handle, user)` + client-side decrypt |
+
+**Key principles:**
+1. Use `FHE.makePubliclyDecryptable()` for values everyone should see (vote results, auction winners)
+2. Use `FHE.allow()` + reencryption for private values (balances, secrets)
+3. Always check `FHE.isSenderAllowed()` in view functions that return encrypted handles
+4. Minimize decryptions — keep data encrypted as long as possible
+5. Remember: ACL must be reset after every FHE operation (new handle = empty ACL)
+
+<Card title="Next Module" icon="arrow-right" href="/modules/08-conditional-logic">
+  Master branch-free programming with encrypted conditional logic
+</Card>

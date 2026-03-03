@@ -1,0 +1,544 @@
+---
+title: Type Casting
+description: Complete reference for FHE type casting and conversions between encrypted types
+---
+
+## Overview
+
+Type casting in FHE allows you to convert between different encrypted types. This includes:
+1. **Plaintext to Encrypted**: Convert plaintext values to encrypted types
+2. **Encrypted to Encrypted**: Upcast or downcast between encrypted integer sizes
+3. **Type Compatibility**: Ensure operands match for FHE operations
+
+## Import
+
+```solidity
+import { FHE, euint8, euint16, euint32, euint64, ebool } from "@fhevm/solidity/lib/FHE.sol";
+```
+
+---
+
+## Plaintext to Encrypted
+
+Convert plaintext constants to encrypted types.
+
+### FHE.asEuint8() through asEuint256()
+
+<ParamField path="value" type="uint8 - uint256" required>
+  Plaintext value to encrypt
+</ParamField>
+
+<ParamField path="returns" type="euint8 - euint256">
+  Encrypted representation of the plaintext value
+</ParamField>
+
+**Signatures**:
+```solidity
+function asEuint8(uint8 value) returns (euint8)
+function asEuint16(uint16 value) returns (euint16)
+function asEuint32(uint32 value) returns (euint32)
+function asEuint64(uint64 value) returns (euint64)
+function asEuint128(uint128 value) returns (euint128)
+function asEuint256(uint256 value) returns (euint256)
+```
+
+**Example**:
+```solidity
+contract TypeConversion is ZamaEthereumConfig {
+    function plaintextToEncrypted(uint32 plainValue) external returns (euint32) {
+        euint32 encrypted = FHE.asEuint32(plainValue);
+        FHE.allowThis(encrypted);
+        FHE.allow(encrypted, msg.sender);
+        return encrypted;
+    }
+}
+```
+
+**Common Use Cases**:
+```solidity
+// Initialize encrypted constants
+euint32 ZERO = FHE.asEuint32(0);
+euint64 MAX_BALANCE = FHE.asEuint64(1000000);
+
+// Use in operations
+euint32 result = FHE.add(encryptedValue, FHE.asEuint32(10));
+
+// Conditional selection
+euint64 capped = FHE.select(
+    FHE.gt(value, 100),
+    FHE.asEuint64(100),  // Cap at 100
+    value
+);
+```
+
+**Gas Cost**: ~50k gas
+
+---
+
+### FHE.asEbool()
+
+Convert plaintext boolean to encrypted boolean.
+
+<ParamField path="value" type="bool" required>
+  Plaintext boolean value
+</ParamField>
+
+<ParamField path="returns" type="ebool">
+  Encrypted boolean
+</ParamField>
+
+**Signature**:
+```solidity
+function asEbool(bool value) returns (ebool)
+```
+
+**Example**:
+```solidity
+function initializeFlag(bool initialValue) external {
+    ebool encryptedFlag = FHE.asEbool(initialValue);
+    FHE.allowThis(encryptedFlag);
+    FHE.allow(encryptedFlag, msg.sender);
+}
+```
+
+---
+
+### FHE.asEaddress()
+
+Convert plaintext address to encrypted address.
+
+<ParamField path="value" type="address" required>
+  Plaintext Ethereum address
+</ParamField>
+
+<ParamField path="returns" type="eaddress">
+  Encrypted address
+</ParamField>
+
+**Signature**:
+```solidity
+function asEaddress(address value) returns (eaddress)
+```
+
+**Example**:
+```solidity
+function storeOwner() external {
+    eaddress encryptedOwner = FHE.asEaddress(msg.sender);
+    FHE.allowThis(encryptedOwner);
+}
+
+// Check if addresses match
+function isSender(eaddress encryptedAddr) internal view returns (ebool) {
+    return FHE.eq(encryptedAddr, FHE.asEaddress(msg.sender));
+}
+```
+
+---
+
+## Encrypted to Encrypted (Upcasting)
+
+Convert smaller encrypted types to larger encrypted types (safe, no data loss).
+
+### Upcast Operations
+
+<ParamField path="value" type="euintXX" required>
+  Smaller encrypted integer
+</ParamField>
+
+<ParamField path="returns" type="euintYY">
+  Larger encrypted integer (where YY > XX)
+</ParamField>
+
+**Example - euint8 to euint32**:
+```solidity
+function upcast8to32(uint8 value) external returns (euint32) {
+    euint8 enc8 = FHE.asEuint8(value);
+    euint32 enc32 = FHE.asEuint32(enc8);  // Upcast
+    
+    FHE.allowThis(enc32);
+    FHE.allow(enc32, msg.sender);
+    return enc32;
+}
+```
+
+**Example - euint16 to euint64**:
+```solidity
+function upcast16to64(uint16 value) external returns (euint64) {
+    euint16 enc16 = FHE.asEuint16(value);
+    euint64 enc64 = FHE.asEuint64(enc16);  // Upcast
+    
+    FHE.allowThis(enc64);
+    FHE.allow(enc64, msg.sender);
+    return enc64;
+}
+```
+
+**All Upcast Paths**:
+```solidity
+// euint8 can upcast to: euint16, euint32, euint64, euint128, euint256
+euint16 a = FHE.asEuint16(enc8);
+euint32 b = FHE.asEuint32(enc8);
+euint64 c = FHE.asEuint64(enc8);
+
+// euint16 can upcast to: euint32, euint64, euint128, euint256
+euint32 d = FHE.asEuint32(enc16);
+euint64 e = FHE.asEuint64(enc16);
+
+// euint32 can upcast to: euint64, euint128, euint256
+euint64 f = FHE.asEuint64(enc32);
+euint128 g = FHE.asEuint128(enc32);
+
+// And so on...
+```
+
+**Gas Cost**: Similar to plaintext conversion (~50k gas)
+
+<Info>
+  **Upcasting is safe**: No data loss occurs when converting to a larger type.
+</Info>
+
+---
+
+## Encrypted to Encrypted (Downcasting)
+
+Convert larger encrypted types to smaller encrypted types (may truncate).
+
+### Downcast Operations
+
+<ParamField path="value" type="euintYY" required>
+  Larger encrypted integer
+</ParamField>
+
+<ParamField path="returns" type="euintXX">
+  Smaller encrypted integer (where XX < YY)
+</ParamField>
+
+**Example - euint32 to euint8**:
+```solidity
+function downcast32to8(uint32 value) external returns (euint8) {
+    euint32 enc32 = FHE.asEuint32(value);
+    euint8 enc8 = FHE.asEuint8(enc32);  // Downcast (may truncate)
+    
+    FHE.allowThis(enc8);
+    FHE.allow(enc8, msg.sender);
+    return enc8;
+}
+```
+
+**Truncation Behavior**:
+```solidity
+// Value 300 (0x012C) in euint32
+euint32 large = FHE.asEuint32(300);
+
+// Downcast to euint8 (keeps lower 8 bits)
+euint8 small = FHE.asEuint8(large);  // Result: 44 (0x2C)
+// Lost: 0x01 (upper bits)
+```
+
+<Warning>
+  **Downcasting truncates**: Values larger than the target type's range will be truncated (modulo operation).
+</Warning>
+
+**Safe Downcasting Pattern**:
+```solidity
+function safeDowncast(euint32 value) internal returns (euint8) {
+    // Check if value fits in euint8
+    ebool fitsIn8Bits = FHE.le(value, 255);
+    
+    // Downcast only if safe, otherwise use max value
+    euint8 downcasted = FHE.asEuint8(value);
+    euint8 safe = FHE.select(
+        fitsIn8Bits,
+        downcasted,
+        FHE.asEuint8(255)  // Max euint8 value
+    );
+    
+    FHE.allowThis(safe);
+    return safe;
+}
+```
+
+---
+
+## Type Compatibility in Operations
+
+### Same Type Requirement
+
+Most FHE operations require both operands to be the same encrypted type:
+
+```solidity
+// ❌ WRONG: Type mismatch
+euint8 a = FHE.asEuint8(10);
+euint32 b = FHE.asEuint32(20);
+euint32 sum = FHE.add(a, b);  // Compilation error!
+
+// ✅ CORRECT: Upcast to same type
+euint8 a = FHE.asEuint8(10);
+euint32 b = FHE.asEuint32(20);
+euint32 aUpcasted = FHE.asEuint32(a);  // Upcast to euint32
+euint32 sum = FHE.add(aUpcasted, b);   // Now both are euint32
+```
+
+### Mixed Encrypted/Plaintext Operations
+
+Many operations accept a plaintext second operand:
+
+```solidity
+// ✅ Encrypted + Plaintext (no cast needed)
+euint32 encrypted = FHE.asEuint32(100);
+euint32 result = FHE.add(encrypted, 50);  // Second operand is plaintext
+
+// ❌ Wrong: Casting plaintext unnecessarily
+euint32 result = FHE.add(encrypted, FHE.asEuint32(50));  // Wasteful
+```
+
+<Tip>
+  When the second operand is a constant, use plaintext directly - it's 30-40% cheaper than encrypting it first.
+</Tip>
+
+---
+
+## Complete Example: Type Conversions
+
+```solidity
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import { FHE, ebool, euint8, euint16, euint32, euint64 } from "@fhevm/solidity/lib/FHE.sol";
+import { ZamaEthereumConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
+
+contract TypeCastingDemo is ZamaEthereumConfig {
+    euint8 private result8;
+    euint16 private result16;
+    euint32 private result32;
+    euint64 private result64;
+    ebool private resultBool;
+    
+    /// @notice Plaintext to encrypted
+    function plaintextToEncrypted(uint32 plainValue) external {
+        result32 = FHE.asEuint32(plainValue);
+        FHE.allowThis(result32);
+        FHE.allow(result32, msg.sender);
+    }
+    
+    /// @notice Upcast: euint8 -> euint32
+    function upcast8to32(uint8 value) external {
+        euint8 enc8 = FHE.asEuint8(value);
+        result32 = FHE.asEuint32(enc8);
+        FHE.allowThis(result32);
+        FHE.allow(result32, msg.sender);
+    }
+    
+    /// @notice Upcast: euint16 -> euint64
+    function upcast16to64(uint16 value) external {
+        euint16 enc16 = FHE.asEuint16(value);
+        result64 = FHE.asEuint64(enc16);
+        FHE.allowThis(result64);
+        FHE.allow(result64, msg.sender);
+    }
+    
+    /// @notice Downcast: euint32 -> euint8 (with truncation)
+    function downcast32to8(uint32 value) external {
+        euint32 enc32 = FHE.asEuint32(value);
+        result8 = FHE.asEuint8(enc32);  // May truncate
+        FHE.allowThis(result8);
+        FHE.allow(result8, msg.sender);
+    }
+    
+    /// @notice Safe downcast with bounds checking
+    function safeDowncast(uint32 value) external {
+        euint32 enc32 = FHE.asEuint32(value);
+        
+        // Check if value fits in euint8 (0-255)
+        ebool fitsIn8Bits = FHE.le(enc32, 255);
+        
+        // Downcast
+        euint8 downcasted = FHE.asEuint8(enc32);
+        
+        // Use downcasted if safe, otherwise use max (255)
+        result8 = FHE.select(
+            fitsIn8Bits,
+            downcasted,
+            FHE.asEuint8(255)
+        );
+        
+        FHE.allowThis(result8);
+        FHE.allow(result8, msg.sender);
+    }
+    
+    /// @notice Mixed type operation
+    function mixedTypeAdd(uint8 small, uint32 large) external {
+        euint8 encSmall = FHE.asEuint8(small);
+        euint32 encLarge = FHE.asEuint32(large);
+        
+        // Upcast small to match large
+        euint32 smallUpcasted = FHE.asEuint32(encSmall);
+        
+        // Now both are euint32
+        result32 = FHE.add(smallUpcasted, encLarge);
+        
+        FHE.allowThis(result32);
+        FHE.allow(result32, msg.sender);
+    }
+    
+    /// @notice Comparison returns ebool
+    function compareEqual(uint32 a, uint32 b) external {
+        euint32 encA = FHE.asEuint32(a);
+        euint32 encB = FHE.asEuint32(b);
+        resultBool = FHE.eq(encA, encB);
+        FHE.allowThis(resultBool);
+        FHE.allow(resultBool, msg.sender);
+    }
+    
+    // Getters
+    function getResult8() external view returns (euint8) { return result8; }
+    function getResult16() external view returns (euint16) { return result16; }
+    function getResult32() external view returns (euint32) { return result32; }
+    function getResult64() external view returns (euint64) { return result64; }
+    function getResultBool() external view returns (ebool) { return resultBool; }
+}
+```
+
+---
+
+## Common Patterns
+
+### Pattern 1: Normalize to Common Type
+
+```solidity
+// Add values of different encrypted types
+function addMixed(euint8 small, euint32 large) internal returns (euint32) {
+    euint32 smallNormalized = FHE.asEuint32(small);
+    euint32 result = FHE.add(smallNormalized, large);
+    FHE.allowThis(result);
+    return result;
+}
+```
+
+### Pattern 2: Downcast with Clamping
+
+```solidity
+// Clamp to euint8 range before downcast
+function clampAndDowncast(euint32 value) internal returns (euint8) {
+    euint32 clamped = FHE.min(value, FHE.asEuint32(255));
+    euint8 result = FHE.asEuint8(clamped);
+    FHE.allowThis(result);
+    return result;
+}
+```
+
+### Pattern 3: Type-Safe Wrapper
+
+```solidity
+// Ensure operations work on consistent types
+function safeAdd(
+    euint32 a,
+    euint32 b
+) internal returns (euint32) {
+    euint32 result = FHE.add(a, b);
+    FHE.allowThis(result);
+    return result;
+}
+
+function safeAddMixed(
+    euint8 small,
+    euint32 large
+) internal returns (euint32) {
+    return safeAdd(FHE.asEuint32(small), large);
+}
+```
+
+---
+
+## Best Practices
+
+### 1. Prefer Upcasting Over Downcasting
+
+```solidity
+// ✅ Safe: Upcast to common larger type
+euint8 a = FHE.asEuint8(10);
+euint32 b = FHE.asEuint32(20);
+euint32 result = FHE.add(FHE.asEuint32(a), b);
+
+// ❌ Risky: Downcast may lose data
+euint8 result = FHE.asEuint8(FHE.add(a, FHE.asEuint8(b)));
+```
+
+### 2. Use Plaintext for Constants
+
+```solidity
+// ❌ Wasteful: Encrypting constant
+euint32 result = FHE.add(value, FHE.asEuint32(10));
+
+// ✅ Efficient: Plaintext constant
+euint32 result = FHE.add(value, 10);
+```
+
+### 3. Check Bounds Before Downcasting
+
+```solidity
+// ✅ Safe downcast
+function safeDowncast(euint32 value) internal returns (euint8) {
+    ebool fits = FHE.le(value, 255);
+    euint8 casted = FHE.asEuint8(value);
+    euint8 safe = FHE.select(fits, casted, FHE.asEuint8(255));
+    FHE.allowThis(safe);
+    return safe;
+}
+```
+
+### 4. Document Type Conversions
+
+```solidity
+/// @notice Add values with automatic type normalization
+/// @param small euint8 value (will be upcasted to euint32)
+/// @param large euint32 value
+/// @return euint32 sum
+function addNormalized(euint8 small, euint32 large) 
+    public 
+    returns (euint32) 
+{
+    euint32 smallUpcasted = FHE.asEuint32(small);
+    return FHE.add(smallUpcasted, large);
+}
+```
+
+---
+
+## Type Conversion Table
+
+| From Type | To Type | Operation | Data Loss? | Gas Cost |
+|-----------|---------|-----------|------------|----------|
+| `uint8` | `euint8` | `FHE.asEuint8()` | No | ~50k |
+| `uint32` | `euint32` | `FHE.asEuint32()` | No | ~50k |
+| `bool` | `ebool` | `FHE.asEbool()` | No | ~50k |
+| `address` | `eaddress` | `FHE.asEaddress()` | No | ~50k |
+| `euint8` | `euint32` | `FHE.asEuint32(enc8)` | No (upcast) | ~50k |
+| `euint16` | `euint64` | `FHE.asEuint64(enc16)` | No (upcast) | ~50k |
+| `euint32` | `euint8` | `FHE.asEuint8(enc32)` | **Yes** (downcast) | ~50k |
+| `euint64` | `euint32` | `FHE.asEuint32(enc64)` | **Yes** (downcast) | ~50k |
+
+---
+
+## Important Notes
+
+<Warning>
+  **Downcasting truncates**: Converting from a larger to smaller type discards upper bits. Always validate ranges before downcasting.
+</Warning>
+
+<Info>
+  **Type matching required**: FHE operations require operands of the same type, except when the second operand is plaintext.
+</Info>
+
+<Tip>
+  **Use plaintext for constants**: Operations with plaintext second operands are 30-40% cheaper than fully encrypted operations.
+</Tip>
+
+---
+
+## Related
+
+- [Encrypted Types](/api/encrypted-types) - Available encrypted types and ranges
+- [Input Conversion](/api/input-conversion) - Convert external inputs
+- [Arithmetic Operations](/api/arithmetic) - Operations requiring type compatibility
+- [Gas Costs](/api/gas-costs) - Optimization strategies

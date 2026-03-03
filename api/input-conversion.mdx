@@ -1,0 +1,527 @@
+---
+title: Input Conversion
+description: Complete reference for FHE.fromExternal() - converting encrypted user inputs with zero-knowledge proofs
+---
+
+## Overview
+
+When users submit encrypted data to your contract, it arrives as an `externalEuintXX` type along with a zero-knowledge proof. Use `FHE.fromExternal()` to convert and validate this input before using it in your contract.
+
+## Import
+
+```solidity
+import { 
+    FHE, 
+    euint32, 
+    externalEuint32  // External input type
+} from "@fhevm/solidity/lib/FHE.sol";
+```
+
+<Info>
+  The ZK proof ensures the encrypted input was created correctly by the user and hasn't been tampered with.
+</Info>
+
+---
+
+## External Input Types
+
+### Available Types
+
+<ParamField path="externalEbool" type="type">
+  External encrypted boolean input
+</ParamField>
+
+<ParamField path="externalEuint8" type="type">
+  External encrypted 8-bit unsigned integer input
+</ParamField>
+
+<ParamField path="externalEuint16" type="type">
+  External encrypted 16-bit unsigned integer input
+</ParamField>
+
+<ParamField path="externalEuint32" type="type">
+  External encrypted 32-bit unsigned integer input
+</ParamField>
+
+<ParamField path="externalEuint64" type="type">
+  External encrypted 64-bit unsigned integer input
+</ParamField>
+
+<ParamField path="externalEuint128" type="type">
+  External encrypted 128-bit unsigned integer input
+</ParamField>
+
+<ParamField path="externalEuint256" type="type">
+  External encrypted 256-bit unsigned integer input
+</ParamField>
+
+<ParamField path="externalEaddress" type="type">
+  External encrypted address input
+</ParamField>
+
+**Import**:
+```solidity
+import { 
+    externalEuint8, externalEuint16, externalEuint32, externalEuint64,
+    externalEuint128, externalEuint256, externalEbool, externalEaddress
+} from "@fhevm/solidity/lib/FHE.sol";
+```
+
+---
+
+## Convert External Input
+
+### FHE.fromExternal()
+
+Convert an external encrypted input to an internal encrypted type, validating the zero-knowledge proof.
+
+<ParamField path="externalValue" type="externalEuintXX | externalEbool | externalEaddress" required>
+  External encrypted input from user
+</ParamField>
+
+<ParamField path="inputProof" type="bytes calldata" required>
+  Zero-knowledge proof of correct encryption
+</ParamField>
+
+<ParamField path="returns" type="euintXX | ebool | eaddress">
+  Internal encrypted value ready for FHE operations
+</ParamField>
+
+**Signatures**:
+```solidity
+function fromExternal(externalEuint8, bytes calldata inputProof) returns (euint8)
+function fromExternal(externalEuint16, bytes calldata inputProof) returns (euint16)
+function fromExternal(externalEuint32, bytes calldata inputProof) returns (euint32)
+function fromExternal(externalEuint64, bytes calldata inputProof) returns (euint64)
+function fromExternal(externalEuint128, bytes calldata inputProof) returns (euint128)
+function fromExternal(externalEuint256, bytes calldata inputProof) returns (euint256)
+function fromExternal(externalEbool, bytes calldata inputProof) returns (ebool)
+function fromExternal(externalEaddress, bytes calldata inputProof) returns (eaddress)
+```
+
+**Basic Example**:
+```solidity
+contract SecureInput is ZamaEthereumConfig {
+    euint32 private storedValue;
+    
+    function storeValue(
+        externalEuint32 encValue,
+        bytes calldata inputProof
+    ) external {
+        // Convert and validate input
+        euint32 value = FHE.fromExternal(encValue, inputProof);
+        
+        storedValue = value;
+        
+        // Set ACL permissions
+        FHE.allowThis(storedValue);
+        FHE.allow(storedValue, msg.sender);
+    }
+}
+```
+
+**Gas Cost**: ~50-150k gas (varies by type and proof complexity)
+
+---
+
+## Usage Patterns
+
+### Pattern 1: Single Input
+
+```solidity
+function deposit(
+    externalEuint64 encAmount,
+    bytes calldata inputProof
+) external {
+    euint64 amount = FHE.fromExternal(encAmount, inputProof);
+    
+    balances[msg.sender] = FHE.add(balances[msg.sender], amount);
+    FHE.allowThis(balances[msg.sender]);
+    FHE.allow(balances[msg.sender], msg.sender);
+}
+```
+
+---
+
+### Pattern 2: Multiple Inputs (Shared Proof)
+
+```solidity
+/// @notice Store multiple encrypted values with shared proof
+function storeMultiple(
+    externalEuint32 encValueA,
+    externalEuint64 encValueB,
+    bytes calldata inputProof  // Single proof for both inputs
+) external {
+    euint32 valueA = FHE.fromExternal(encValueA, inputProof);
+    euint64 valueB = FHE.fromExternal(encValueB, inputProof);
+    
+    // Use values...
+    FHE.allowThis(valueA);
+    FHE.allow(valueA, msg.sender);
+    FHE.allowThis(valueB);
+    FHE.allow(valueB, msg.sender);
+}
+```
+
+<Info>
+  Multiple encrypted inputs can share a single proof if they were encrypted together by the client.
+</Info>
+
+---
+
+### Pattern 3: Input Validation
+
+```solidity
+function submit(
+    externalEuint32 encValue,
+    bytes calldata inputProof
+) external {
+    euint32 value = FHE.fromExternal(encValue, inputProof);
+    
+    // Validate range (encrypted comparison)
+    ebool isValid = FHE.and(
+        FHE.ge(value, MIN_VALUE),
+        FHE.le(value, MAX_VALUE)
+    );
+    
+    // Only process if valid (silent failure)
+    euint32 processedValue = FHE.select(
+        isValid,
+        value,
+        FHE.asEuint32(0)
+    );
+    
+    // Continue with processedValue...
+}
+```
+
+---
+
+### Pattern 4: Boolean Input
+
+```solidity
+function vote(
+    uint256 proposalId,
+    externalEbool encSupport,  // true = yes, false = no
+    bytes calldata inputProof
+) external {
+    ebool support = FHE.fromExternal(encSupport, inputProof);
+    
+    // Increment yes votes if support, otherwise no votes
+    euint32 yesToAdd = FHE.select(support, FHE.asEuint32(1), FHE.asEuint32(0));
+    euint32 noToAdd = FHE.select(support, FHE.asEuint32(0), FHE.asEuint32(1));
+    
+    proposals[proposalId].yesVotes = FHE.add(proposals[proposalId].yesVotes, yesToAdd);
+    proposals[proposalId].noVotes = FHE.add(proposals[proposalId].noVotes, noToAdd);
+}
+```
+
+---
+
+## Complete Example: Confidential ERC-20
+
+```solidity
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import { FHE, euint64, externalEuint64, ebool } from "@fhevm/solidity/lib/FHE.sol";
+import { ZamaEthereumConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
+
+contract ConfidentialERC20 is ZamaEthereumConfig {
+    string public name;
+    string public symbol;
+    uint8 public decimals;
+    
+    mapping(address => euint64) private balances;
+    mapping(address => mapping(address => euint64)) private allowances;
+    
+    event Transfer(address indexed from, address indexed to);
+    event Approval(address indexed owner, address indexed spender);
+    
+    constructor(string memory _name, string memory _symbol) {
+        name = _name;
+        symbol = _symbol;
+        decimals = 6;
+    }
+    
+    /// @notice Transfer encrypted amount
+    function transfer(
+        externalEuint64 encAmount,
+        bytes calldata inputProof,
+        address to
+    ) external {
+        // Convert external input
+        euint64 amount = FHE.fromExternal(encAmount, inputProof);
+        
+        // Check balance
+        ebool hasBalance = FHE.ge(balances[msg.sender], amount);
+        
+        // Update balances (silent failure if insufficient)
+        euint64 actualAmount = FHE.select(hasBalance, amount, FHE.asEuint64(0));
+        
+        balances[msg.sender] = FHE.sub(balances[msg.sender], actualAmount);
+        balances[to] = FHE.add(balances[to], actualAmount);
+        
+        // Set ACL
+        FHE.allowThis(balances[msg.sender]);
+        FHE.allow(balances[msg.sender], msg.sender);
+        FHE.allowThis(balances[to]);
+        FHE.allow(balances[to], to);
+        
+        emit Transfer(msg.sender, to);
+    }
+    
+    /// @notice Approve spender for encrypted amount
+    function approve(
+        externalEuint64 encAmount,
+        bytes calldata inputProof,
+        address spender
+    ) external {
+        euint64 amount = FHE.fromExternal(encAmount, inputProof);
+        
+        allowances[msg.sender][spender] = amount;
+        
+        FHE.allowThis(allowances[msg.sender][spender]);
+        FHE.allow(allowances[msg.sender][spender], msg.sender);
+        FHE.allow(allowances[msg.sender][spender], spender);
+        
+        emit Approval(msg.sender, spender);
+    }
+    
+    /// @notice Transfer from approved account
+    function transferFrom(
+        address from,
+        externalEuint64 encAmount,
+        bytes calldata inputProof,
+        address to
+    ) external {
+        euint64 amount = FHE.fromExternal(encAmount, inputProof);
+        
+        // Check allowance and balance
+        ebool hasAllowance = FHE.ge(allowances[from][msg.sender], amount);
+        ebool hasBalance = FHE.ge(balances[from], amount);
+        ebool canTransfer = FHE.and(hasAllowance, hasBalance);
+        
+        euint64 actualAmount = FHE.select(canTransfer, amount, FHE.asEuint64(0));
+        
+        // Update allowance
+        allowances[from][msg.sender] = FHE.sub(
+            allowances[from][msg.sender],
+            actualAmount
+        );
+        
+        // Update balances
+        balances[from] = FHE.sub(balances[from], actualAmount);
+        balances[to] = FHE.add(balances[to], actualAmount);
+        
+        // Set ACL
+        FHE.allowThis(allowances[from][msg.sender]);
+        FHE.allow(allowances[from][msg.sender], from);
+        FHE.allow(allowances[from][msg.sender], msg.sender);
+        FHE.allowThis(balances[from]);
+        FHE.allow(balances[from], from);
+        FHE.allowThis(balances[to]);
+        FHE.allow(balances[to], to);
+        
+        emit Transfer(from, to);
+    }
+    
+    /// @notice Get encrypted balance
+    function balanceOf(address account) external view returns (euint64) {
+        return balances[account];
+    }
+    
+    /// @notice Get encrypted allowance
+    function allowance(address owner, address spender) 
+        external 
+        view 
+        returns (euint64) 
+    {
+        return allowances[owner][spender];
+    }
+}
+```
+
+---
+
+## Client-Side Integration
+
+The client must encrypt values and generate proofs using the fhEVM SDK:
+
+```typescript
+import { createInstance } from '@zama-fhe/fhevm';
+
+// Initialize fhEVM instance
+const instance = await createInstance({
+  chainId: 8009,
+  networkUrl: 'https://devnet.zama.ai',
+  gatewayUrl: 'https://gateway.zama.ai'
+});
+
+// Encrypt a value
+const amount = 1000;
+const encryptedAmount = await instance.encrypt64(amount);
+
+// Get the input proof
+const inputProof = encryptedAmount.inputProof;
+
+// Call contract
+await contract.deposit(
+  encryptedAmount.handles[0],  // externalEuint64
+  inputProof                    // bytes calldata
+);
+```
+
+See client documentation for complete integration guide.
+
+---
+
+## Best Practices
+
+### 1. Always Set ACL After Conversion
+
+```solidity
+// ❌ WRONG: Missing ACL
+euint64 value = FHE.fromExternal(encValue, proof);
+balances[msg.sender] = value;
+
+// ✅ CORRECT: Set ACL
+euint64 value = FHE.fromExternal(encValue, proof);
+balances[msg.sender] = value;
+FHE.allowThis(balances[msg.sender]);
+FHE.allow(balances[msg.sender], msg.sender);
+```
+
+### 2. Validate Inputs (Encrypted)
+
+```solidity
+// Validate range without revealing value
+euint64 amount = FHE.fromExternal(encAmount, proof);
+ebool isValid = FHE.and(
+    FHE.ge(amount, MIN_AMOUNT),
+    FHE.le(amount, MAX_AMOUNT)
+);
+euint64 safeAmount = FHE.select(isValid, amount, FHE.asEuint64(0));
+```
+
+### 3. Use Silent Failures
+
+```solidity
+// ❌ WRONG: Reveals information through revert
+euint64 amount = FHE.fromExternal(encAmount, proof);
+require(amount > 0, "Amount too small");  // Leaks info!
+
+// ✅ CORRECT: Silent failure
+euint64 amount = FHE.fromExternal(encAmount, proof);
+ebool isValid = FHE.gt(amount, 0);
+euint64 safeAmount = FHE.select(isValid, amount, FHE.asEuint64(0));
+```
+
+### 4. Minimize Conversions
+
+```solidity
+// ❌ Multiple conversions
+function process(
+    externalEuint64 enc1, bytes calldata proof1,
+    externalEuint64 enc2, bytes calldata proof2
+) external {
+    euint64 a = FHE.fromExternal(enc1, proof1);
+    euint64 b = FHE.fromExternal(enc2, proof2);
+    // ...
+}
+
+// ✅ Single conversion (if client can combine)
+function process(
+    externalEuint64 encSum,
+    bytes calldata proof
+) external {
+    euint64 sum = FHE.fromExternal(encSum, proof);
+    // Client computed sum off-chain
+}
+```
+
+---
+
+## Error Handling
+
+### Invalid Proof
+
+If the proof is invalid, `fromExternal` will revert:
+
+```solidity
+try this.storeValue(encValue, invalidProof) {
+    // Success
+} catch {
+    // Invalid proof - transaction reverts
+}
+```
+
+<Warning>
+  **Invalid proofs cause reverts**. Ensure clients generate proofs correctly using the fhEVM SDK.
+</Warning>
+
+---
+
+## Gas Optimization
+
+### 1. Share Proofs for Multiple Inputs
+
+```solidity
+// ✅ Single proof for multiple values
+function submit(
+    externalEuint32 encA,
+    externalEuint32 encB,
+    bytes calldata proof  // Shared proof
+) external {
+    euint32 a = FHE.fromExternal(encA, proof);
+    euint32 b = FHE.fromExternal(encB, proof);
+}
+```
+
+### 2. Pre-compute Off-Chain
+
+```solidity
+// ❌ Multiple operations on-chain
+function calculate(
+    externalEuint64 encA,
+    externalEuint64 encB,
+    bytes calldata proof
+) external {
+    euint64 a = FHE.fromExternal(encA, proof);
+    euint64 b = FHE.fromExternal(encB, proof);
+    euint64 result = FHE.mul(FHE.add(a, b), 2);  // 2 FHE ops
+}
+
+// ✅ Client computes result = (a + b) * 2, sends result
+function calculate(
+    externalEuint64 encResult,
+    bytes calldata proof
+) external {
+    euint64 result = FHE.fromExternal(encResult, proof);  // 0 FHE ops
+}
+```
+
+---
+
+## Important Notes
+
+<Warning>
+  **Proof Validation**: `FHE.fromExternal()` verifies the ZK proof. Invalid proofs cause transaction revert.
+</Warning>
+
+<Info>
+  **Type Matching**: External type must match internal type: `externalEuint32` → `euint32`.
+</Info>
+
+<Tip>
+  **Gas Cost**: Input conversion costs ~50-150k gas. Use smallest type that fits your data.
+</Tip>
+
+---
+
+## Related
+
+- [Encrypted Types](/api/encrypted-types) - Available encrypted types
+- [ACL Documentation](/api/acl) - Set permissions after conversion
+- [Type Casting](/api/type-casting) - Convert between encrypted types
+- [Gas Costs](/api/gas-costs) - Optimization strategies

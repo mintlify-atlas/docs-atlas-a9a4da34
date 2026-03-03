@@ -1,0 +1,409 @@
+---
+title: Frequently Asked Questions
+description: Common questions about FHEVM and the bootcamp
+---
+
+Answers to the most frequently asked questions about FHE, fhEVM, and the bootcamp curriculum.
+
+## General
+
+<AccordionGroup>
+  <Accordion title="What is Fully Homomorphic Encryption (FHE)?">
+    Fully Homomorphic Encryption (FHE) is a form of encryption that allows arbitrary computations to be performed on encrypted data without decrypting it. The result of the computation, when decrypted, matches the result of performing the same computation on the plaintext data.
+    
+    **Example:** If you encrypt two numbers `Enc(5)` and `Enc(3)`, you can compute `Enc(5) + Enc(3) = Enc(8)` without ever knowing that the numbers are 5 and 3.
+  </Accordion>
+
+  <Accordion title="What is fhEVM?">
+    fhEVM is Zama's implementation of Fully Homomorphic Encryption on the Ethereum Virtual Machine. It allows smart contracts to operate on encrypted data throughout the entire computation lifecycle. fhEVM combines the standard EVM with a TFHE coprocessor to enable confidential smart contracts.
+  </Accordion>
+
+  <Accordion title="Who should take this bootcamp?">
+    This bootcamp is designed for:
+    - Solidity developers who want to build confidential smart contracts
+    - Blockchain engineers interested in privacy-preserving computation
+    - Smart contract auditors who need to understand FHE security patterns
+    - Researchers exploring on-chain privacy solutions
+    
+    **Prerequisites:** Intermediate Solidity knowledge, familiarity with Hardhat or Foundry.
+  </Accordion>
+
+  <Accordion title="How long does the bootcamp take?">
+    The bootcamp consists of **20 modules** totaling **~63 hours**.
+    
+    **Recommended path:** 4 weeks at ~16 hours/week
+    
+    We also offer:
+    - **Intensive:** 7 days at ~9 hours/day
+    - **Part-Time:** 6 weeks at ~11 hours/week
+    - **Self-Paced:** 8-14 weeks at your own pace
+    
+    See [Learning Paths](/resources/learning-paths) for detailed schedules.
+  </Accordion>
+
+  <Accordion title="Do I get a certificate?">
+    Yes! Students who achieve an overall score of **70% or higher** and meet all requirements receive a **Certificate of Completion**.
+    
+    Students who score **90% or higher** receive a **Certificate of Distinction**.
+    
+    See [Assessment System](/resources/assessment-system) for details.
+  </Accordion>
+</AccordionGroup>
+
+## Technical
+
+<AccordionGroup>
+  <Accordion title="What's the difference between the old TFHE library and the new FHE library?">
+    The **new FHE API** (introduced in fhEVM v0.9+) simplifies the developer experience:
+    
+    | Old API | New API |
+    |---|---|
+    | `TFHE` library | `FHE` library |
+    | `einput` | `externalEuintXX` |
+    | `TFHE.asEuint32(einput, proof)` | `FHE.fromExternal(externalEuint32, proof)` |
+    | `TFHE.randomEuint32()` | `FHE.randEuint32()` |
+    | No base config | Inherit `ZamaEthereumConfig` |
+    
+    **This bootcamp uses the new FHE API exclusively.**
+  </Accordion>
+
+  <Accordion title="Why can't I use if/else on encrypted values?">
+    In FHE, encrypted values are ciphertexts that cannot be directly inspected. A branching statement like `if (encryptedBalance > 100)` would require decrypting the value to evaluate the condition, which defeats the purpose of encryption.
+    
+    **Solution:** Use `FHE.select(condition, valueIfTrue, valueIfFalse)` instead.
+    
+    ```solidity
+    // Bad: leaks information
+    if (FHE.decrypt(balance) > 100) {
+        // ...
+    }
+    
+    // Good: no leakage
+    ebool isAboveThreshold = FHE.gt(balance, FHE.asEuint64(100));
+    result = FHE.select(isAboveThreshold, valueIfTrue, valueIfFalse);
+    ```
+  </Accordion>
+
+  <Accordion title="Why do I need to call FHE.allowThis() after every operation?">
+    Every FHE operation produces a **new ciphertext** with an **empty Access Control List (ACL)**. If you store this ciphertext without calling `FHE.allowThis()`, the contract will not have permission to read its own storage in subsequent transactions.
+    
+    **Example:**
+    ```solidity
+    euint32 newBalance = FHE.add(balance, amount);
+    balances[user] = newBalance;
+    FHE.allowThis(newBalance);  // CRITICAL: allow contract to read newBalance later
+    ```
+    
+    **Missing `FHE.allowThis()` is the #1 bug in FHE contracts.**
+  </Accordion>
+
+  <Accordion title="What happens on overflow?">
+    Encrypted arithmetic operations **wrap silently** on overflow. There is **no revert**.
+    
+    **Example:**
+    ```solidity
+    euint8 a = FHE.asEuint8(200);
+    euint8 b = FHE.asEuint8(100);
+    euint8 sum = FHE.add(a, b);  // sum = 44 (300 mod 256), no revert
+    ```
+    
+    **Best practice:** Use comparison + select to prevent unwanted overflow:
+    ```solidity
+    ebool willOverflow = FHE.gt(FHE.add(a, b), FHE.asEuint8(255));
+    result = FHE.select(willOverflow, a, FHE.add(a, b));
+    ```
+  </Accordion>
+
+  <Accordion title="How do I decrypt encrypted values?">
+    There are two decryption patterns:
+    
+    **1. Public Decryption (on-chain reveal):**
+    ```solidity
+    FHE.makePubliclyDecryptable(encryptedValue);
+    ```
+    The value becomes visible to all chain observers.
+    
+    **2. Re-encryption (user-specific, off-chain):**
+    ```solidity
+    // Contract grants ACL permission
+    FHE.allow(encryptedValue, user);
+    
+    // User decrypts client-side via Relayer SDK
+    const decrypted = await instance.userDecrypt(encryptedValueHandle);
+    ```
+    The value remains encrypted on-chain and is only revealed to the specific user.
+  </Accordion>
+
+  <Accordion title="Can I use FHE for all my contract logic?">
+    **No, and you shouldn't.** FHE operations are **orders of magnitude more expensive** in gas than plaintext operations.
+    
+    **Best practice:** Use a **hybrid approach**:
+    - Encrypt only the data that requires confidentiality (balances, votes, bids)
+    - Keep metadata plaintext (timestamps, addresses, counts)
+    - Use plaintext operands where possible: `FHE.add(encrypted, plaintext)` is cheaper than `FHE.add(encrypted, encrypted)`
+    
+    See [Gas Optimization](/modules/15-gas-optimization) for details.
+  </Accordion>
+
+  <Accordion title="How do I test FHE contracts?">
+    Use the **Hardhat fhEVM plugin** which provides a **mock mode** for testing:
+    
+    ```typescript
+    import { createInstance } from "@fhevm/hardhat-plugin";
+    
+    const instance = await createInstance();
+    const input = instance.createEncryptedInput(contractAddress, userAddress);
+    input.add32(42);
+    const encryptedInput = input.encrypt();
+    
+    await contract.myFunction(encryptedInput.handles[0], encryptedInput.inputProof);
+    ```
+    
+    See [Module 14: Testing & Debugging](/modules/14-testing-debugging) for comprehensive testing strategies.
+  </Accordion>
+</AccordionGroup>
+
+## Bootcamp
+
+<AccordionGroup>
+  <Accordion title="What programming languages do I need to know?">
+    - **Solidity** (intermediate level) -- required
+    - **TypeScript/JavaScript** (for tests and frontend) -- recommended
+    - **React** (for Module 10: Frontend Integration) -- helpful but not required
+  </Accordion>
+
+  <Accordion title="What tools do I need installed?">
+    - Node.js 20+
+    - npm 10+ or pnpm 9+
+    - Git 2.40+
+    - A code editor (VS Code recommended)
+    - MetaMask or another Web3 wallet (for frontend modules)
+    
+    See [Module 02: Development Setup](/modules/02-development-setup) for detailed installation instructions.
+  </Accordion>
+
+  <Accordion title="Can I take the bootcamp at my own pace?">
+    Yes! We offer a **Self-Paced** learning path with no fixed deadlines. You can complete the 20 modules over 8-14 weeks (or longer) at your own schedule.
+    
+    See [Learning Paths](/resources/learning-paths) for details.
+  </Accordion>
+
+  <Accordion title="Are there live sessions or is it self-study?">
+    The bootcamp is designed to work in both formats:
+    
+    **Cohort-based (live):**
+    - Instructor-led sessions
+    - Weekly Q&A and code reviews
+    - Peer collaboration
+    - Fixed schedule (4-week or 1.5-week intensive)
+    
+    **Self-study:**
+    - All materials available online
+    - Self-paced progression
+    - Community support via Zama forums
+    - No live sessions
+  </Accordion>
+
+  <Accordion title="How are assignments graded?">
+    Assignments are graded on three criteria:
+    
+    **1. Correctness (50%):**
+    - Contract compiles
+    - All required features work
+    - Tests pass
+    - Edge cases handled
+    
+    **2. Code Quality (25%):**
+    - Clean imports
+    - Naming conventions
+    - NatSpec comments
+    - Code organization
+    
+    **3. Security (25%):**
+    - ACL management
+    - No information leakage
+    - Input validation
+    
+    See [Assessment System](/resources/assessment-system) for detailed rubrics.
+  </Accordion>
+
+  <Accordion title="What is the capstone project?">
+    The capstone project is a **Confidential DAO** that demonstrates mastery of all 18 preceding modules. You will build:
+    
+    - Encrypted governance token (euint64 balances)
+    - Encrypted voting (yesVotes, noVotes)
+    - Private treasury management
+    - Proposal creation and execution
+    - Complete test suite (20+ tests)
+    - Documentation (README, security model)
+    
+    See [Module 19: Capstone](/modules/19-capstone) for full specifications.
+  </Accordion>
+
+  <Accordion title="Can I get help if I'm stuck?">
+    Yes! We provide multiple support channels:
+    
+    **For cohort-based programs:**
+    - Weekly office hours with instructors
+    - Code review on all submissions
+    - 1-on-1 tutoring for struggling students
+    
+    **For self-paced learners:**
+    - Zama community forums ([community.zama.ai](https://community.zama.ai))
+    - GitHub discussions for curriculum questions
+    - Detailed solution files for all exercises
+  </Accordion>
+</AccordionGroup>
+
+## Advanced
+
+<AccordionGroup>
+  <Accordion title="What's the difference between FHE and Zero-Knowledge Proofs?">
+    Both provide privacy, but in different ways:
+    
+    **FHE (Fully Homomorphic Encryption):**
+    - **Computes** on encrypted data without decrypting it
+    - Result is also encrypted
+    - Use case: Confidential computation (encrypted balances, votes, bids)
+    
+    **ZK Proofs (Zero-Knowledge Proofs):**
+    - **Proves** a statement is true without revealing why
+    - Does not perform computation on encrypted data
+    - Use case: Verification without revelation (prove you have funds without showing balance)
+    
+    **They are complementary, not competing technologies.**
+  </Accordion>
+
+  <Accordion title="What's the difference between FHE and Trusted Execution Environments (TEEs)?">
+    **FHE:**
+    - Mathematical privacy guarantees
+    - No hardware trust assumptions
+    - Works on public blockchains
+    - Higher computational cost
+    - Believed to be quantum-resistant
+    
+    **TEEs (e.g., Intel SGX):**
+    - Hardware-based privacy
+    - Requires trusting the hardware manufacturer
+    - Lower computational cost
+    - Vulnerable to side-channel attacks
+    - Not quantum-resistant
+    
+    **FHE is preferred for blockchain use cases** where trustlessness and long-term security are critical.
+  </Accordion>
+
+  <Accordion title="Can FHE contracts interact with standard ERC-20 tokens?">
+    Yes, through **wrapping**. The ERC-7984 standard defines how to wrap standard ERC-20 tokens into confidential tokens (cTokens):
+    
+    **Example:**
+    ```solidity
+    // User deposits 100 USDT (plaintext ERC-20)
+    usdt.transferFrom(user, address(this), 100);
+    
+    // Contract mints 100 cUSDT (encrypted ERC-7984)
+    _mint(user, FHE.asEuint64(100));
+    ```
+    
+    See [Module 11: Confidential ERC-20](/modules/11-project-erc20) for the full pattern.
+  </Accordion>
+
+  <Accordion title="How does fhEVM compare to other privacy solutions like Aztec or Mina?">
+    | Feature | fhEVM | Aztec | Mina |
+    |---|---|---|---|
+    | **Technology** | FHE (TFHE) | ZK Proofs | ZK Proofs (recursive SNARKs) |
+    | **Computation** | On encrypted data | On plaintext, prove result | On plaintext, prove result |
+    | **EVM Compatible** | Yes | No (custom VM) | No (custom VM) |
+    | **Use Case** | Confidential smart contracts | Private DeFi | Succinct blockchain |
+    | **Gas Cost** | High | Medium | Low |
+    | **Developer Experience** | Solidity | Noir | TypeScript |
+    
+    **fhEVM is the best choice if:**
+    - You want to build on Ethereum
+    - You need encrypted state throughout computation
+    - You want to use Solidity
+  </Accordion>
+
+  <Accordion title="What are the gas costs for FHE operations?">
+    FHE operations are significantly more expensive than plaintext operations:
+    
+    | Operation | euint8 | euint32 | euint64 | Plaintext |
+    |---|---|---|---|---|
+    | **add** | ~50k | ~150k | ~250k | ~5k |
+    | **mul** | ~100k | ~300k | ~500k | ~5k |
+    | **gt** | ~70k | ~200k | ~350k | ~3k |
+    
+    **Optimization strategies:**
+    - Use the smallest type that fits your data
+    - Use plaintext operands: `FHE.add(enc, 5)` is cheaper than `FHE.add(enc, FHE.asEuint32(5))`
+    - Batch operations
+    - Hybrid contracts (encrypt only what's necessary)
+    
+    See [Module 15: Gas Optimization](/modules/15-gas-optimization) for detailed benchmarks.
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Why am I getting 'Unauthorized access to ciphertext' errors?">
+    This error means you forgot to call `FHE.allowThis()` or `FHE.allow()` after creating/modifying an encrypted value.
+    
+    **Solution:**
+    ```solidity
+    euint32 newValue = FHE.add(oldValue, amount);
+    balances[user] = newValue;
+    FHE.allowThis(newValue);  // REQUIRED
+    FHE.allow(newValue, user); // If user needs to read it
+    ```
+  </Accordion>
+
+  <Accordion title="Why is my contract reverting without an error message?">
+    FHE contracts should **never revert** on encrypted conditions (this would leak information). If your contract is reverting:
+    
+    **Likely causes:**
+    1. You used `require()` on an encrypted value
+    2. You forgot `FHE.allowThis()`
+    3. You have a bug in non-encrypted logic (plaintext require)
+    
+    **Debug strategy:**
+    - Check all `require()` statements
+    - Verify ACL permissions
+    - Use the "silent fail" pattern (FHE.select) for encrypted conditions
+  </Accordion>
+
+  <Accordion title="My tests are failing with 'Cannot read properties of undefined'">
+    This usually means you didn't set up the fhEVM mock environment correctly.
+    
+    **Solution:**
+    ```typescript
+    import { createInstance } from "@fhevm/hardhat-plugin";
+    
+    beforeEach(async function () {
+        this.instance = await createInstance();
+        // ... deploy contract
+    });
+    ```
+    
+    See [Module 14: Testing & Debugging](/modules/14-testing-debugging) for complete setup.
+  </Accordion>
+</AccordionGroup>
+
+## Still Have Questions?
+
+<CardGroup cols={2}>
+  <Card title="Community Forum" icon="comments" href="https://community.zama.ai">
+    Ask questions on the Zama community forums
+  </Card>
+  
+  <Card title="GitHub Discussions" icon="github" href="https://github.com/Himess/fhevm-bootcamp/discussions">
+    Start a discussion about the curriculum
+  </Card>
+  
+  <Card title="Zama Documentation" icon="book" href="https://docs.zama.ai/fhevm">
+    Official fhEVM documentation
+  </Card>
+  
+  <Card title="Report an Issue" icon="bug" href="https://github.com/Himess/fhevm-bootcamp/issues">
+    Found a bug or error in the bootcamp?
+  </Card>
+</CardGroup>

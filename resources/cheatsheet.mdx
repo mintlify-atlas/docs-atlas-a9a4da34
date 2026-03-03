@@ -1,0 +1,341 @@
+---
+title: FHE Operations Cheat Sheet
+description: Quick reference for FHEVM operations and patterns
+---
+
+<Note>
+New API: Library is `FHE`, imported from `@fhevm/solidity/lib/FHE.sol`
+</Note>
+
+## Setup
+
+```solidity
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import { FHE, euint32, euint64, ebool, eaddress } from "@fhevm/solidity/lib/FHE.sol";
+import { ZamaEthereumConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
+
+contract MyContract is ZamaEthereumConfig {
+    // Your encrypted contract logic here
+}
+```
+
+## Encrypted Types
+
+### Boolean
+
+| Type | Description | Plaintext Equivalent |
+|---|---|---|
+| `ebool` | Encrypted boolean | `bool` |
+
+### Unsigned Integers
+
+| Type | Bits | Range | Plaintext Equivalent |
+|---|---|---|---|
+| `euint8` | 8 | 0 -- 255 | `uint8` |
+| `euint16` | 16 | 0 -- 65,535 | `uint16` |
+| `euint32` | 32 | 0 -- 4,294,967,295 | `uint32` |
+| `euint64` | 64 | 0 -- 18.4 * 10^18 | `uint64` |
+| `euint128` | 128 | 0 -- 3.4 * 10^38 | `uint128` |
+| `euint256` | 256 | 0 -- 1.15 * 10^77 | `uint256` |
+
+### Address
+
+| Type | Description | Plaintext Equivalent |
+|---|---|---|
+| `eaddress` | Encrypted Ethereum address | `address` |
+
+### External Input Types
+
+| External Type | Converts To |
+|---|---|
+| `externalEbool` | `ebool` |
+| `externalEuint8` | `euint8` |
+| `externalEuint16` | `euint16` |
+| `externalEuint32` | `euint32` |
+| `externalEuint64` | `euint64` |
+| `externalEuint128` | `euint128` |
+| `externalEuint256` | `euint256` |
+| `externalEaddress` | `eaddress` |
+
+## Input Conversion
+
+Convert external encrypted inputs to internal encrypted types:
+
+```solidity
+function receiveInput(externalEuint32 encInput, bytes calldata inputProof) external {
+    euint32 value = FHE.fromExternal(encInput, inputProof);
+    // Now 'value' can be used in FHE operations
+    FHE.allowThis(value);
+}
+```
+
+| Function | Input | Output |
+|---|---|---|
+| `FHE.fromExternal(externalEbool, inputProof)` | `externalEbool, bytes calldata inputProof` | `ebool` |
+| `FHE.fromExternal(externalEuint8, inputProof)` | `externalEuint8, bytes calldata inputProof` | `euint8` |
+| `FHE.fromExternal(externalEuint32, inputProof)` | `externalEuint32, bytes calldata inputProof` | `euint32` |
+| `FHE.fromExternal(externalEuint64, inputProof)` | `externalEuint64, bytes calldata inputProof` | `euint64` |
+
+## Plaintext to Encrypted Conversion
+
+Encrypt a plaintext constant within the contract:
+
+```solidity
+euint32 encryptedFive = FHE.asEuint32(5);
+ebool encryptedTrue = FHE.asEbool(true);
+eaddress encAddr = FHE.asEaddress(msg.sender);
+```
+
+| Function | Input | Output |
+|---|---|---|
+| `FHE.asEbool(bool)` | `bool` | `ebool` |
+| `FHE.asEuint8(uint8)` | Plaintext value | `euint8` |
+| `FHE.asEuint32(uint32)` | Plaintext value | `euint32` |
+| `FHE.asEuint64(uint64)` | Plaintext value | `euint64` |
+| `FHE.asEaddress(address)` | `address` | `eaddress` |
+
+## Type Casting
+
+```solidity
+euint8 small = FHE.asEuint8(42);
+euint32 bigger = FHE.asEuint32(small);   // Upcast: euint8 -> euint32
+euint8 back = FHE.asEuint8(bigger);      // Downcast: euint32 -> euint8 (may truncate)
+```
+
+## Arithmetic Operations
+
+| Operation | Function | Example |
+|---|---|---|
+| Addition | `FHE.add(a, b)` | `euint32 sum = FHE.add(x, y);` |
+| Subtraction | `FHE.sub(a, b)` | `euint32 diff = FHE.sub(x, y);` |
+| Multiplication | `FHE.mul(a, b)` | `euint32 prod = FHE.mul(x, y);` |
+| Division | `FHE.div(a, plaintext)` | `euint32 quot = FHE.div(x, 2);` |
+| Remainder | `FHE.rem(a, plaintext)` | `euint32 mod = FHE.rem(x, 3);` |
+| Negation | `FHE.neg(a)` | `euint32 neg = FHE.neg(x);` |
+| Minimum | `FHE.min(a, b)` | `euint32 m = FHE.min(x, y);` |
+| Maximum | `FHE.max(a, b)` | `euint32 m = FHE.max(x, y);` |
+
+<Warning>
+**Note:** `div` and `rem` only accept a plaintext (scalar) second operand. You cannot divide or take the remainder by an encrypted value.
+
+**Overflow behavior:** Operations wrap silently. `FHE.add` on `euint8` with values 200 + 100 = 44 (wraps at 256). No revert.
+</Warning>
+
+## Comparison Operations
+
+All comparisons return `ebool` (encrypted boolean).
+
+| Operation | Function | Example |
+|---|---|---|
+| Equal | `FHE.eq(a, b)` | `ebool isEq = FHE.eq(x, y);` |
+| Not equal | `FHE.ne(a, b)` | `ebool isNe = FHE.ne(x, y);` |
+| Greater than | `FHE.gt(a, b)` | `ebool isGt = FHE.gt(x, y);` |
+| Greater or equal | `FHE.ge(a, b)` | `ebool isGe = FHE.ge(x, y);` |
+| Less than | `FHE.lt(a, b)` | `ebool isLt = FHE.lt(x, y);` |
+| Less or equal | `FHE.le(a, b)` | `ebool isLe = FHE.le(x, y);` |
+
+## Bitwise Operations
+
+| Operation | Function | Example |
+|---|---|---|
+| AND | `FHE.and(a, b)` | `euint8 r = FHE.and(x, y);` |
+| OR | `FHE.or(a, b)` | `euint8 r = FHE.or(x, y);` |
+| XOR | `FHE.xor(a, b)` | `euint8 r = FHE.xor(x, y);` |
+| NOT | `FHE.not(a)` | `euint8 r = FHE.not(x);` |
+
+**Also works on `ebool`:**
+
+```solidity
+ebool result = FHE.and(cond1, cond2);   // logical AND
+ebool result = FHE.or(cond1, cond2);    // logical OR
+ebool result = FHE.not(cond1);          // logical NOT
+```
+
+## Shift and Rotate Operations
+
+| Operation | Function | Example |
+|---|---|---|
+| Shift left | `FHE.shl(a, b)` | `euint32 r = FHE.shl(x, 2);` |
+| Shift right | `FHE.shr(a, b)` | `euint32 r = FHE.shr(x, 2);` |
+| Rotate left | `FHE.rotl(a, b)` | `euint32 r = FHE.rotl(x, 4);` |
+| Rotate right | `FHE.rotr(a, b)` | `euint32 r = FHE.rotr(x, 4);` |
+
+## Conditional Selection (Encrypted Ternary)
+
+The fundamental branching primitive in FHE. Replaces `if/else` for encrypted conditions.
+
+```solidity
+// FHE.select(condition, valueIfTrue, valueIfFalse)
+euint32 result = FHE.select(isGreater, largeValue, smallValue);
+```
+
+| Function | Signature | Description |
+|---|---|---|
+| `FHE.select` | `FHE.select(ebool, euintXX, euintXX) -> euintXX` | Returns first value if true, second if false |
+
+**Nested selects (multi-way):**
+
+```solidity
+// Encrypted equivalent of: if (a) x; else if (b) y; else z;
+euint32 result = FHE.select(condA, x, FHE.select(condB, y, z));
+```
+
+## Random Number Generation
+
+Generate encrypted random values on-chain:
+
+| Function | Output Type |
+|---|---|
+| `FHE.randEbool()` | `ebool` |
+| `FHE.randEuint8()` | `euint8` |
+| `FHE.randEuint16()` | `euint16` |
+| `FHE.randEuint32()` | `euint32` |
+| `FHE.randEuint64()` | `euint64` |
+
+**Bounded random (upper bound, exclusive):**
+
+```solidity
+// Random number from 0 to 99
+euint32 dice = FHE.randEuint32(100);
+FHE.allowThis(dice);
+```
+
+## Access Control (ACL)
+
+### Persistent Permissions
+
+| Function | Description |
+|---|---|
+| `FHE.allow(ciphertext, address)` | Allow `address` to use `ciphertext` |
+| `FHE.allowThis(ciphertext)` | Allow this contract to use `ciphertext` |
+
+### Transient Permissions
+
+| Function | Description |
+|---|---|
+| `FHE.allowTransient(ciphertext, address)` | Temporarily allow `address` for current transaction |
+
+### Permission Checks
+
+| Function | Description |
+|---|---|
+| `FHE.isSenderAllowed(ciphertext)` | Is `msg.sender` allowed to use this ciphertext? |
+| `FHE.isAllowed(ciphertext, address)` | Is `address` allowed to use this ciphertext? |
+
+### Common ACL Pattern
+
+```solidity
+// After ANY operation that produces a new ciphertext:
+euint32 newBalance = FHE.add(balance, amount);
+FHE.allowThis(newBalance);           // Contract can use it in future txs
+FHE.allow(newBalance, owner);        // Owner can view/decrypt it
+```
+
+## Decryption
+
+### Re-encryption (User-Specific, Off-Chain)
+
+Re-encryption is handled **client-side** using the Relayer SDK (`@zama-fhe/relayer-sdk`).
+
+```solidity
+// Return the encrypted handle -- client decrypts via instance.userDecrypt()
+function viewMyBalance() external view returns (euint64) {
+    return balances[msg.sender]; // ACL must have been set via FHE.allow(balance, msg.sender)
+}
+```
+
+### Public Decryption (On-Chain Reveal)
+
+```solidity
+// Step 1: Make a value publicly decryptable
+FHE.makePubliclyDecryptable(encryptedValue);
+
+// Step 2: Check if a value has been marked for public decryption
+bool canDecrypt = FHE.isPubliclyDecryptable(encryptedValue);
+```
+
+| Function | Description |
+|---|---|
+| `FHE.makePubliclyDecryptable(ciphertext)` | Mark an encrypted value for public decryption |
+| `FHE.isPubliclyDecryptable(ciphertext)` | Check if a value has been marked publicly decryptable |
+
+## Complete Example: Encrypted Transfer
+
+```solidity
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import { FHE, euint64, ebool } from "@fhevm/solidity/lib/FHE.sol";
+import { ZamaEthereumConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
+
+contract ConfidentialToken is ZamaEthereumConfig {
+    mapping(address => euint64) private balances;
+
+    function transfer(address to, externalEuint64 encAmount, bytes calldata inputProof) external {
+        euint64 amount = FHE.fromExternal(encAmount, inputProof);
+
+        // Encrypted balance check
+        ebool hasEnough = FHE.ge(balances[msg.sender], amount);
+
+        // Conditional update (silent fail if insufficient)
+        euint64 newSenderBal = FHE.select(
+            hasEnough,
+            FHE.sub(balances[msg.sender], amount),
+            balances[msg.sender]
+        );
+        euint64 newReceiverBal = FHE.select(
+            hasEnough,
+            FHE.add(balances[to], amount),
+            balances[to]
+        );
+
+        // Update storage
+        balances[msg.sender] = newSenderBal;
+        balances[to] = newReceiverBal;
+
+        // ACL: allow contract + owners
+        FHE.allowThis(newSenderBal);
+        FHE.allow(newSenderBal, msg.sender);
+        FHE.allowThis(newReceiverBal);
+        FHE.allow(newReceiverBal, to);
+    }
+}
+```
+
+## Quick Rules
+
+<CardGroup cols={2}>
+  <Card title="Always call FHE.allowThis()" icon="lock">
+    After storing an encrypted value. The contract needs permission to read its own storage.
+  </Card>
+  
+  <Card title="Never use if on encrypted values" icon="ban">
+    Use `FHE.select()` instead.
+  </Card>
+  
+  <Card title="Use externalEuintXX for inputs" icon="upload">
+    Convert with `FHE.fromExternal(value, inputProof)`.
+  </Card>
+  
+  <Card title="Both operands must match types" icon="equals">
+    Or second operand is plaintext.
+  </Card>
+  
+  <Card title="Overflow wraps silently" icon="warning">
+    There is no revert on overflow.
+  </Card>
+  
+  <Card title="Use the smallest type" icon="gauge">
+    Gas cost scales with bit width.
+  </Card>
+  
+  <Card title="Decryption patterns" icon="eye">
+    Use `FHE.makePubliclyDecryptable()` for on-chain reveal or client-side re-encryption via `instance.userDecrypt()`.
+  </Card>
+  
+  <Card title="Inherit ZamaEthereumConfig" icon="code">
+    In your contract for proper fhEVM configuration.
+  </Card>
+</CardGroup>
